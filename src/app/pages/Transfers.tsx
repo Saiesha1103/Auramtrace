@@ -106,6 +106,10 @@ function TransferDialog({ open, onClose }: { open: boolean; onClose: () => void 
 
   const submit = () => {
     if (!sender) return setMsg({ ok: false, text: 'Nobody holds gold on this job yet — issue a lot first.' });
+    // validate all legs first so a split is never half-recorded
+    const bad = legs.findIndex((l) => !l.to || !(Number(l.gross) > 0));
+    if (bad >= 0) return setMsg({ ok: false, text: `${mode === 'split' ? `Recipient ${bad + 1}` : 'The transfer'} needs a receiver and a gross weight above zero. Nothing was recorded.` });
+    if (new Set(legs.map((l) => l.to)).size !== legs.length) return setMsg({ ok: false, text: 'Each recipient can appear only once in a split. Nothing was recorded.' });
     if (movingFine > held + 0.0005) return setMsg({ ok: false, text: `${partyName(sender)} holds ${g3(held)} fine on ${jobId}; these legs move ${g3(movingFine)}.` });
     const done: string[] = [];
     for (const leg of legs) {

@@ -121,7 +121,7 @@ export function Production() {
           />
         </Card>
       )}
-      <StageDialog open={open} onClose={() => setOpen(false)} initialJob={jobId === 'All jobs' ? s.jobs[0].id : jobId} />
+      <StageDialog key={jobId} open={open} onClose={() => setOpen(false)} initialJob={jobId === 'All jobs' ? s.jobs[0].id : jobId} />
     </div>
   );
 }

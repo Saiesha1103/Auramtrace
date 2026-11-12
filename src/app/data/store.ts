@@ -85,6 +85,7 @@ const positive = (n: number) => Number.isFinite(n) && n > 0;
 export function createJob(input: Omit<Job, 'id' | 'createdAt'> & { createdAt: string }): Result {
   if (!input.title.trim()) return { ok: false, error: 'Title is required.' };
   if (!positive(input.pieces) || !positive(input.targetGrossPerPiece)) return { ok: false, error: 'Pieces and target weight must be greater than zero.' };
+  if (!input.deadline) return { ok: false, error: 'Set a deadline.' };
   if (input.deadline < input.createdAt) return { ok: false, error: 'Deadline cannot be before the creation date.' };
   if (input.lossAllowancePct < 0 || input.lossAllowancePct > 5) return { ok: false, error: 'Loss allowance must be between 0% and 5%.' };
   const id = nextId('J');

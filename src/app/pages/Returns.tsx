@@ -72,7 +72,7 @@ export function Returns() {
           ]}
         />
       </Card>
-      <ReturnDialog open={open} onClose={() => setOpen(false)} initialJob={jobId === 'All jobs' ? 'J-1168' : jobId} />
+      <ReturnDialog key={jobId} open={open} onClose={() => setOpen(false)} initialJob={jobId === 'All jobs' ? 'J-1168' : jobId} />
     </div>
   );
 }

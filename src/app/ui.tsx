@@ -252,12 +252,17 @@ export function Btn({ children, icon, variant = 'ghost', size = 'md', ...rest }:
 export function Dialog({ open, title, onClose, children, footer }: { open: boolean; title: string; onClose: () => void; children: ReactNode; footer?: ReactNode }) {
   const ref = useRef<HTMLDivElement>(null);
   const titleId = useId();
+  // keep the latest onClose without re-running the open/focus effect on every render
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
   useEffect(() => {
     if (!open) return;
     const prev = document.activeElement as HTMLElement | null;
-    const first = ref.current?.querySelector<HTMLElement>('input, select, textarea, button');
+    const first =
+      ref.current?.querySelector<HTMLElement>('.dlg-body input:not([disabled]):not([readonly]), .dlg-body select, .dlg-body textarea') ??
+      ref.current?.querySelector<HTMLElement>('button');
     first?.focus();
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && closeRef.current();
     window.addEventListener('keydown', onKey);
     document.body.style.overflow = 'hidden';
     return () => {
@@ -265,7 +270,7 @@ export function Dialog({ open, title, onClose, children, footer }: { open: boole
       document.body.style.overflow = '';
       prev?.focus();
     };
-  }, [open, onClose]);
+  }, [open]);
   if (!open) return null;
   return (
     <div className="dlg-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>

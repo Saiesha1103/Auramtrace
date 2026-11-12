@@ -88,7 +88,7 @@ function NewJobDialog({ open, onClose }: { open: boolean; onClose: () => void })
       headKarigarId: f.headKarigarId,
       lossAllowancePct: Number(f.lossAllowancePct),
       createdAt: AS_OF,
-      deadline: f.deadline || AS_OF,
+      deadline: f.deadline,
       notes: f.notes,
     });
     if (res.ok) {

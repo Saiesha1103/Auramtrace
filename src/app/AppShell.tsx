@@ -160,6 +160,20 @@ export default function AppShell() {
   const View = VIEWS[page];
 
   useEffect(() => {
+    const landingTitle = document.title.includes('·') ? 'AURUMTRACE — Precious-Metal Intelligence Platform' : document.title;
+    return () => {
+      document.title = landingTitle;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!menu) return;
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setMenu(false);
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [menu]);
+
+  useEffect(() => {
     document.title = `${PAGES.find((p) => p.key === page)?.label ?? 'App'} · AURUMTRACE`;
     window.scrollTo(0, 0);
     main.current?.focus({ preventScroll: true });
