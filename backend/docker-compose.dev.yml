@@ -1,0 +1,21 @@
+# Local development database only (not a deployment). Synthetic dev-only credentials.
+#   docker compose -f docker-compose.dev.yml up -d
+services:
+  db:
+    image: postgres:17-alpine
+    container_name: aurumtrace-pg-dev
+    environment:
+      POSTGRES_USER: aurumtrace
+      POSTGRES_PASSWORD: aurumtrace_dev
+      POSTGRES_DB: aurumtrace
+    ports:
+      - "5433:5432"
+    volumes:
+      - aurumtrace_pg:/var/lib/postgresql/data
+      - ./scripts/create-test-db.sql:/docker-entrypoint-initdb.d/10-test-db.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aurumtrace"]
+      interval: 5s
+      retries: 10
+volumes:
+  aurumtrace_pg:
