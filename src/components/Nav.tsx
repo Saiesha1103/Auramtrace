@@ -74,7 +74,7 @@ export function Nav() {
         </nav>
 
         <div className="nav-actions">
-          <Button variant="ghost" href="#cta" className="nav-login">
+          <Button variant="ghost" href="#/app/dashboard" className="nav-login">
             Log In
           </Button>
           <Button href="#cta" icon="arrow" className="nav-start">

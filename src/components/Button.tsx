@@ -19,7 +19,8 @@ export function Button({ variant = 'gold', icon, iconLeft, size = 'md', classNam
       className={`btn btn-${variant} btn-${size} ${className}`}
       onClick={(e) => {
         onClick?.(e);
-        if (href?.startsWith('#') && href.length > 1 && !e.defaultPrevented) {
+        // in-page anchors scroll smoothly; '#/app/...' routes are left to the hash router
+        if (href?.startsWith('#') && !href.startsWith('#/') && href.length > 1 && !e.defaultPrevented) {
           e.preventDefault();
           scrollToId(href.slice(1));
         }

@@ -4,7 +4,8 @@ export type IconName =
   | 'issue' | 'transfer' | 'manufacture' | 'return' | 'reconcile'
   | 'layers' | 'scale' | 'sparkle' | 'shield'
   | 'arrow' | 'play' | 'search' | 'link' | 'doc' | 'user' | 'check' | 'alert'
-  | 'chevron' | 'scan' | 'clock' | 'flame';
+  | 'chevron' | 'scan' | 'clock' | 'flame'
+  | 'plus' | 'close' | 'download' | 'menu' | 'grid' | 'filter';
 
 const PATHS: Record<IconName, JSX.Element> = {
   issue: (
@@ -117,6 +118,24 @@ const PATHS: Record<IconName, JSX.Element> = {
       <path d="M14 8.5V14l3.5 2.5" />
     </>
   ),
+  plus: <path d="M14 6v16M6 14h16" />,
+  close: <path d="m8 8 12 12M20 8 8 20" />,
+  download: (
+    <>
+      <path d="M14 4v13m0 0-5-5m5 5 5-5" />
+      <path d="M5 20v3.5h18V20" />
+    </>
+  ),
+  menu: <path d="M5 9h18M5 14h18M5 19h18" />,
+  grid: (
+    <>
+      <rect x="4.5" y="4.5" width="8" height="8" rx="2" />
+      <rect x="15.5" y="4.5" width="8" height="8" rx="2" />
+      <rect x="4.5" y="15.5" width="8" height="8" rx="2" />
+      <rect x="15.5" y="15.5" width="8" height="8" rx="2" />
+    </>
+  ),
+  filter: <path d="M4 6h20l-8 9v7l-4 2v-9L4 6Z" />,
   flame: <path d="M14 3.5c1 4 6 6.5 6 12.5a6 6 0 0 1-12 0c0-2.6 1.3-4.4 2.6-5.6.2 2 1.2 3 2.4 3.3-.6-3.7.3-7.4 1-10.2Z" />,
 };
 
