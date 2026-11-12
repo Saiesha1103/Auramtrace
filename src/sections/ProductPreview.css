@@ -1,0 +1,431 @@
+.preview-stage {
+  position: relative;
+  perspective: 1600px;
+}
+.preview-halo {
+  position: absolute;
+  left: 10%;
+  right: 10%;
+  top: -6%;
+  height: 60%;
+  background: radial-gradient(50% 50% at 50% 50%, rgba(226, 160, 60, 0.22), transparent 70%);
+  filter: blur(30px);
+  pointer-events: none;
+}
+
+.dash {
+  position: relative;
+  transform-origin: 50% 0%;
+  border-radius: 22px;
+  border: 1px solid rgba(242, 212, 142, 0.2);
+  background: linear-gradient(180deg, #15100a, #0e0b07);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 232, 180, 0.08),
+    0 60px 140px -40px rgba(0, 0, 0, 0.95),
+    0 0 80px -30px rgba(226, 165, 70, 0.35);
+  overflow: hidden;
+  will-change: transform;
+}
+.dash-chrome {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--line);
+  background: rgba(255, 240, 210, 0.02);
+}
+.dash-dots {
+  display: flex;
+  gap: 7px;
+}
+.dash-dots i {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: rgba(244, 236, 220, 0.14);
+}
+.dash-title {
+  font-size: 13px;
+  color: var(--ivory-3);
+  margin-right: auto;
+}
+
+.dash-body {
+  display: grid;
+  grid-template-columns: 64px 1fr;
+}
+.dash-nav {
+  display: grid;
+  align-content: start;
+  justify-items: center;
+  gap: 8px;
+  padding: 18px 0;
+  border-right: 1px solid var(--line);
+  color: var(--ivory-4);
+}
+.dash-nav span {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+}
+.dash-nav .is-on {
+  color: var(--gold-1);
+  background: rgba(226, 179, 92, 0.1);
+  box-shadow: inset 0 0 0 1px rgba(226, 179, 92, 0.25);
+}
+
+.dash-main {
+  display: grid;
+  gap: 16px;
+  padding: 20px;
+  min-width: 0;
+}
+.dash-kpis {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+}
+.dash-kpi,
+.dash-card {
+  border-radius: 16px;
+  border: 1px solid rgba(226, 179, 92, 0.1);
+  background: linear-gradient(180deg, rgba(255, 240, 210, 0.03), rgba(255, 240, 210, 0.01));
+}
+.dash-kpi {
+  display: grid;
+  gap: 6px;
+  padding: 16px 18px;
+}
+.dash-kpi-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  color: var(--ivory-3);
+}
+.dash-kpi-label svg {
+  color: var(--gold-2);
+}
+.dash-kpi.is-alert .dash-kpi-label svg {
+  color: var(--alert);
+}
+.dash-kpi-value {
+  font-family: var(--sans);
+  font-size: clamp(22px, 2.1vw, 30px);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--ivory);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.dash-kpi-value small {
+  font-size: 0.5em;
+  font-weight: 500;
+  color: var(--ivory-3);
+  margin-left: 4px;
+}
+.dash-kpi-sub {
+  font-size: 12px;
+  color: var(--ivory-4);
+}
+
+.dash-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.65fr) minmax(0, 1fr);
+  gap: 16px;
+}
+.dash-card {
+  padding: 18px;
+  min-width: 0;
+}
+.dash-card-title {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ivory-2);
+}
+
+/* chart */
+.mchart {
+  margin: 0;
+}
+.mchart-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+.mchart-legend {
+  display: flex;
+  gap: 16px;
+  font-size: 12px;
+  color: var(--ivory-3);
+}
+.mchart-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.mchart-legend i {
+  width: 14px;
+  height: 2px;
+  border-radius: 2px;
+}
+.mchart-plot {
+  position: relative;
+}
+.mchart-plot svg {
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+.mchart-grid {
+  stroke: rgba(244, 236, 220, 0.06);
+  stroke-width: 1;
+}
+.mchart-axis {
+  fill: rgba(244, 236, 220, 0.4);
+  font-size: 10px;
+  font-family: var(--mono);
+}
+.mchart-end {
+  fill: rgba(244, 236, 220, 0.78);
+  font-size: 10.5px;
+  font-family: var(--sans);
+  font-weight: 600;
+}
+.mchart-cross {
+  stroke: rgba(244, 236, 220, 0.3);
+  stroke-dasharray: 3 3;
+}
+.mchart-tip {
+  position: absolute;
+  top: 0;
+  transform: translate(-50%, -6px);
+  display: grid;
+  gap: 4px;
+  min-width: 170px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(14, 10, 6, 0.95);
+  border: 1px solid var(--line-strong);
+  box-shadow: 0 12px 30px -10px rgba(0, 0, 0, 0.8);
+  font-size: 12px;
+  color: var(--ivory-2);
+  pointer-events: none;
+}
+.mchart-tip strong {
+  color: var(--ivory);
+  font-weight: 600;
+}
+.mchart-tip span {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.mchart-tip i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+.mchart-tip b {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-weight: 500;
+  color: var(--ivory);
+}
+.mchart-tip-net {
+  padding-top: 4px;
+  border-top: 1px solid var(--line);
+  color: var(--ivory-3);
+}
+
+/* exceptions */
+.dash-exc ul {
+  list-style: none;
+  margin: 14px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+.dash-exc li {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(255, 240, 210, 0.025);
+  border: 1px solid rgba(226, 179, 92, 0.06);
+}
+.dash-exc li:first-child {
+  border-color: rgba(239, 138, 94, 0.3);
+  background: rgba(239, 138, 94, 0.05);
+}
+.sev {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 999px;
+}
+.sev-high {
+  color: #f6a27c;
+  background: rgba(239, 138, 94, 0.14);
+}
+.sev-medium {
+  color: #f0c272;
+  background: rgba(240, 180, 92, 0.12);
+}
+.sev-low {
+  color: var(--ivory-2);
+  background: rgba(244, 236, 220, 0.07);
+}
+.exc-main {
+  display: grid;
+  min-width: 0;
+}
+.exc-main b {
+  font-family: var(--mono);
+  font-weight: 500;
+  font-size: 12.5px;
+}
+.exc-main small {
+  font-size: 11.5px;
+  color: var(--ivory-4);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.exc-delta {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  color: var(--ivory);
+}
+.exc-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 14px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--gold-1);
+}
+.exc-link:hover svg {
+  transform: translateX(3px);
+}
+.exc-link svg {
+  transition: transform 0.4s var(--ease-out);
+}
+
+/* table */
+.dash-table-scroll {
+  margin-top: 10px;
+  overflow-x: auto;
+}
+.dash-table table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  min-width: 640px;
+}
+.dash-table th {
+  text-align: left;
+  font-weight: 500;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ivory-4);
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--line);
+}
+.dash-table td {
+  padding: 11px 10px;
+  color: var(--ivory-2);
+  border-bottom: 1px solid rgba(226, 179, 92, 0.06);
+  white-space: nowrap;
+}
+.dash-table tr:last-child td {
+  border-bottom: 0;
+}
+.dash-table .num {
+  text-align: right;
+}
+.dash-table .mono {
+  font-family: var(--mono);
+  font-size: 12px;
+}
+.pill {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 9px;
+  border-radius: 999px;
+}
+.pill-ok {
+  color: var(--ok);
+  background: rgba(159, 199, 154, 0.1);
+}
+.pill-warn {
+  color: #f0c272;
+  background: rgba(240, 180, 92, 0.1);
+}
+.pill-alert {
+  color: #f6a27c;
+  background: rgba(239, 138, 94, 0.12);
+}
+.pill-muted {
+  color: var(--ivory-3);
+  background: rgba(244, 236, 220, 0.06);
+}
+
+@media (max-width: 1100px) {
+  .dash-kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .dash-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+@media (max-width: 640px) {
+  .dash-body {
+    grid-template-columns: 1fr;
+  }
+  .dash-nav {
+    display: none;
+  }
+  .dash-main {
+    padding: 12px;
+    gap: 12px;
+  }
+  .dash-kpis {
+    gap: 10px;
+  }
+  .dash-kpi {
+    padding: 12px;
+  }
+  .dash-title {
+    display: none;
+  }
+  .dash-chrome .demo-tag {
+    margin-left: auto;
+  }
+}
+/* SVG text is in viewBox units; enlarge it when the chart is rendered narrow */
+@media (max-width: 640px) {
+  .mchart-axis {
+    font-size: 15px;
+  }
+  .mchart-end {
+    font-size: 15px;
+  }
+  .mchart-legend {
+    font-size: 11.5px;
+  }
+}

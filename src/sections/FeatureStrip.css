@@ -1,0 +1,92 @@
+.features {
+  position: relative;
+  z-index: 3;
+  padding-block: 44px 52px;
+  background: linear-gradient(180deg, rgba(14, 10, 6, 0.6), var(--bg));
+}
+.features-rule {
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(242, 212, 142, 0.55) 30%, rgba(255, 236, 190, 0.9) 50%, rgba(242, 212, 142, 0.55) 70%, transparent);
+  box-shadow: 0 0 18px rgba(242, 190, 100, 0.45);
+}
+.features-list {
+  list-style: none;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+.feature {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 14px clamp(14px, 2.2vw, 36px);
+  border-radius: 14px;
+  transition: background-color 0.6s var(--ease-out);
+}
+.feature + .feature::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 12%;
+  bottom: 12%;
+  width: 1px;
+  background: linear-gradient(180deg, transparent, var(--line-strong), transparent);
+}
+.feature-icon {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 54px;
+  height: 54px;
+  transition: transform 0.7s var(--ease-out), filter 0.7s var(--ease-out);
+}
+.feature-text {
+  display: grid;
+  gap: 2px;
+}
+.feature-text strong {
+  font-weight: 600;
+  font-size: 16px;
+  color: var(--ivory);
+}
+.feature-text span {
+  font-size: 14px;
+  color: var(--ivory-3);
+}
+.feature:hover {
+  background: radial-gradient(120% 140% at 20% 50%, rgba(226, 179, 92, 0.08), transparent 70%);
+}
+.feature:hover .feature-icon {
+  transform: translateY(-2px) scale(1.06);
+  filter: drop-shadow(0 0 12px rgba(242, 190, 100, 0.55));
+}
+
+@media (max-width: 1080px) {
+  .features-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    row-gap: 10px;
+  }
+  .feature:nth-child(3)::before {
+    display: none;
+  }
+}
+@media (max-width: 560px) {
+  .features-list {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .feature + .feature::before {
+    left: 10%;
+    right: 10%;
+    top: 0;
+    bottom: auto;
+    width: auto;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--line-strong), transparent);
+  }
+  .feature:nth-child(3)::before {
+    display: block;
+  }
+}

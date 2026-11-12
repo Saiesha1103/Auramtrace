@@ -1,0 +1,306 @@
+.journey {
+  overflow: clip;
+}
+.journey-glow {
+  position: absolute;
+  inset: 20% -10% auto;
+  height: 70%;
+  background: radial-gradient(50% 50% at 50% 50%, rgba(160, 96, 26, 0.16), transparent 70%);
+  pointer-events: none;
+}
+
+.journey-board {
+  position: relative;
+  padding: clamp(28px, 3vw, 44px);
+  border-radius: 28px;
+  border: 1px solid var(--line);
+  background:
+    radial-gradient(100% 120% at 50% 0%, rgba(60, 40, 16, 0.35), transparent 60%),
+    linear-gradient(180deg, rgba(18, 13, 8, 0.85), rgba(10, 8, 5, 0.85));
+  box-shadow: inset 0 1px 0 rgba(255, 230, 170, 0.06), 0 40px 120px -40px rgba(0, 0, 0, 0.9);
+}
+
+/* stage cards: five columns aligned to the track below */
+.journey-stages {
+  list-style: none;
+  margin: 0 0 28px 150px;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 14px;
+}
+.jstage {
+  position: relative;
+  padding: 18px 16px 18px;
+  border-radius: 16px;
+  border: 1px solid rgba(226, 179, 92, 0.08);
+  background: rgba(255, 240, 210, 0.015);
+  opacity: 0.4;
+  filter: saturate(0.4);
+  transform: translateY(8px);
+  transition: opacity 0.8s var(--ease-out), transform 0.8s var(--ease-out), filter 0.8s, border-color 0.8s,
+    background-color 0.8s, box-shadow 0.8s;
+}
+.jstage.is-active {
+  opacity: 1;
+  filter: none;
+  transform: none;
+  border-color: rgba(226, 179, 92, 0.22);
+  background: rgba(60, 42, 18, 0.22);
+}
+.jstage.is-current {
+  border-color: rgba(242, 212, 142, 0.5);
+  box-shadow: 0 0 0 1px rgba(242, 212, 142, 0.12), 0 18px 50px -20px rgba(226, 165, 70, 0.5);
+}
+.jstage-step {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ivory-4);
+}
+.jstage-icon {
+  display: grid;
+  place-items: center;
+  width: 50px;
+  height: 50px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: radial-gradient(circle at 50% 30%, rgba(226, 179, 92, 0.16), transparent 70%);
+  margin-bottom: 14px;
+}
+.jstage.is-current .jstage-icon {
+  box-shadow: 0 0 26px -2px rgba(242, 190, 100, 0.55);
+}
+.jstage h3 {
+  font-family: var(--serif);
+  font-size: 26px;
+  font-weight: 500;
+  margin: 0 0 6px;
+  line-height: 1.1;
+}
+.jstage p {
+  margin: 0 0 14px;
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--ivory-3);
+}
+.jstage-stat {
+  display: inline-block;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--gold-1);
+  padding: 4px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: rgba(226, 179, 92, 0.06);
+  white-space: nowrap;
+}
+
+/* swimlanes */
+.journey-lanes {
+  display: grid;
+  grid-template-columns: 136px 1fr;
+  gap: 14px;
+}
+.lane-labels {
+  display: grid;
+  grid-template-rows: repeat(3, 1fr);
+}
+.lane-labels span {
+  display: flex;
+  align-items: center;
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ivory-3);
+}
+.lane-track {
+  position: relative;
+  height: 240px;
+  display: grid;
+  grid-template-rows: repeat(3, 1fr);
+}
+.lane-row {
+  border-top: 1px dashed rgba(226, 179, 92, 0.12);
+}
+.lane-row:last-of-type {
+  border-bottom: 1px dashed rgba(226, 179, 92, 0.12);
+}
+.lane-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+.lane-base {
+  fill: none;
+  stroke: rgba(226, 179, 92, 0.16);
+  stroke-width: 2;
+  stroke-dasharray: 2 6;
+}
+.lane-progress {
+  fill: none;
+  stroke: url(#jg);
+  stroke-width: 3;
+  stroke-linecap: round;
+  filter: drop-shadow(0 0 6px rgba(255, 190, 90, 0.9)) drop-shadow(0 0 18px rgba(255, 160, 50, 0.5));
+}
+.lane-node {
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  margin: -8px 0 0 -8px;
+  border-radius: 50%;
+  border: 1px solid rgba(226, 179, 92, 0.4);
+  background: var(--bg-1);
+  transition: background-color 0.6s, box-shadow 0.6s, border-color 0.6s, transform 0.6s var(--ease-out);
+}
+.lane-node.is-active {
+  border-color: var(--gold-0);
+  background: var(--gold-1);
+  transform: scale(1.15);
+  box-shadow: 0 0 0 6px rgba(242, 212, 142, 0.12), 0 0 24px 4px rgba(255, 180, 70, 0.6);
+}
+.lane-bead {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  margin: -5px 0 0 -5px;
+  border-radius: 50%;
+  background: #fff6dc;
+  box-shadow: 0 0 10px 3px rgba(255, 220, 150, 0.95), 0 0 34px 10px rgba(255, 170, 60, 0.55);
+  pointer-events: none;
+}
+
+.journey-note {
+  margin: 22px 0 0;
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* ---------- mobile timeline ---------- */
+.jm-list {
+  display: none;
+}
+
+@media (max-width: 1180px) {
+  .journey-stages {
+    margin-left: 0;
+  }
+  .journey-lanes {
+    grid-template-columns: 1fr;
+  }
+  .lane-labels {
+    display: none;
+  }
+  .jstage p {
+    font-size: 13px;
+  }
+}
+
+@media (max-width: 900px) {
+  .journey-board {
+    display: none;
+  }
+  .jm-list {
+    position: relative;
+    display: grid;
+    gap: 18px;
+    list-style: none;
+    margin: 0;
+    padding: 0 0 0 34px;
+  }
+  .jm-line {
+    position: absolute;
+    left: 9px;
+    top: 10px;
+    bottom: 10px;
+    width: 2px;
+    background: rgba(226, 179, 92, 0.14);
+  }
+  .jm-progress {
+    position: absolute;
+    inset: 0;
+    transform-origin: top;
+    background: linear-gradient(180deg, var(--gold-0), var(--gold-3));
+    box-shadow: 0 0 12px rgba(255, 190, 90, 0.8);
+  }
+  .jm-item {
+    position: relative;
+  }
+  .jm-dot {
+    position: absolute;
+    left: -32px;
+    top: 24px;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    border: 1px solid rgba(226, 179, 92, 0.4);
+    background: var(--bg);
+    transition: background-color 0.6s, box-shadow 0.6s;
+  }
+  .jm-item.is-active .jm-dot {
+    background: var(--gold-1);
+    box-shadow: 0 0 18px 3px rgba(255, 180, 70, 0.6);
+  }
+  .jm-card {
+    padding: 20px;
+    border-radius: 18px;
+    border: 1px solid var(--line);
+    background: linear-gradient(180deg, rgba(30, 22, 12, 0.6), rgba(12, 9, 6, 0.6));
+    opacity: 0.55;
+    transition: opacity 0.8s var(--ease-out), border-color 0.8s;
+  }
+  .jm-item.is-active .jm-card {
+    opacity: 1;
+    border-color: rgba(226, 179, 92, 0.3);
+  }
+  .jm-head {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 8px;
+  }
+  .jm-head h3 {
+    margin: 0;
+    font-family: var(--serif);
+    font-weight: 500;
+    font-size: 26px;
+  }
+  .jm-head h3 span {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--ivory-4);
+    vertical-align: middle;
+    margin-right: 4px;
+  }
+  .jm-card p {
+    margin: 0 0 14px;
+    font-size: 14.5px;
+    color: var(--ivory-3);
+  }
+  .jm-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+  }
+  .jm-lane {
+    font-size: 10.5px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--ivory-2);
+    padding: 4px 9px;
+    border-radius: 999px;
+    border: 1px solid var(--line-strong);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .jm-card {
+    opacity: 1 !important;
+  }
+}
