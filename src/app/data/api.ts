@@ -26,9 +26,10 @@ import type {
   Role,
 } from './types';
 
-// Default to backend on localhost:8000/api/v1 if not specified
+// Default to production Render backend if VITE_API_BASE_URL is not specified
 export const API_BASE =
-  (import.meta.env.VITE_API_BASE_URL as string | undefined) || 'http://localhost:8000/api/v1';
+  (import.meta.env.VITE_API_BASE_URL as string | undefined) ||
+  'https://aurumtrace-api-p1rr.onrender.com/api/v1';
 
 export type ApiConnectionStatus = 'connected' | 'connecting' | 'offline_fallback' | 'error';
 

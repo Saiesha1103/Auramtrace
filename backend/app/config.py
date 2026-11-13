@@ -17,7 +17,13 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     access_token_minutes: int = 60
     # comma-separated in env, e.g. AURUM_CORS_ORIGINS=http://localhost:5173,https://app.example.com
-    cors_origins: list[str] = ["http://localhost:5173", "http://127.0.0.1:5173"]
+    cors_origins: list[str] = [
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "https://aurumtrace-web-gamma.vercel.app",
+        "https://*.vercel.app",
+        "*",
+    ]
     # open self-service sign-up (organisation + first admin). Disable outside development.
     allow_registration: bool = True
     sql_echo: bool = False

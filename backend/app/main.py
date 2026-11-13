@@ -56,8 +56,8 @@ def create_app() -> FastAPI:
         CORSMiddleware,
         allow_origins=s.cors_origins,
         allow_credentials=False,
-        allow_methods=["GET", "POST", "PATCH", "OPTIONS"],
-        allow_headers=["Authorization", "Content-Type"],
+        allow_methods=["*"],
+        allow_headers=["*"],
     )
     install_error_handlers(app)
     for r in (
