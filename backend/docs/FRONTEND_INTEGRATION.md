@@ -120,21 +120,22 @@ Authorization: Bearer <accessToken>
 
 ---
 
-## 4. Running Frontend and Backend Together Locally
+## 5. Frontend Screens & API Endpoint Mapping
 
-1. **Start Backend (Terminal 1):**
-   ```bash
-   cd backend
-   source .venv/bin/activate
-   alembic upgrade head
-   python -m scripts.seed
-   uvicorn app.main:app --reload --port 8000
-   ```
+| Screen / Feature | UI Route / Component | Backend API Endpoints | Data Contract / Formatting |
+|---|---|---|---|
+| **Vault & Custody** | `AppShell` -> Vault Overview | `GET /api/v1/lots`<br>`POST /api/v1/lots`<br>`POST /api/v1/lots/{id}/issue`<br>`POST /api/v1/events/{id}/acknowledge` | Weights formatted with 3 decimals (`0.000 g`). Stones tracked separately. |
+| **Karigar Directory** | `AppShell` -> Karigars | `GET /api/v1/karigars`<br>`GET /api/v1/karigars/hierarchy`<br>`POST /api/v1/karigars` | Live derived gold holdings displayed per karigar node. |
+| **Job Orders** | `AppShell` -> Jobs | `GET /api/v1/jobs`<br>`POST /api/v1/jobs`<br>`GET /api/v1/jobs/{id}` | Status badge maps `draft`, `issued`, `in_production`, `returned`, `reconciled`, `settled`. Displays manufacturing loss allowance (`lossAllowancePct`). |
+| **Material Transfers** | `AppShell` -> Transfers | `GET /api/v1/transfers`<br>`POST /api/v1/transfers`<br>`POST /api/v1/transfers/{id}/acknowledge`<br>`POST /api/v1/transfers/{id}/reverse` | Shows pending/acknowledged state. Lineage tracks from/to karigar IDs. |
+| **Production Tracking** | `AppShell` -> Production | `GET /api/v1/production/measurements`<br>`POST /api/v1/production/measurements` | In/Out net metal weight and process stage. |
+| **Material Returns** | `AppShell` -> Returns | `GET /api/v1/returns`<br>`POST /api/v1/returns`<br>`POST /api/v1/returns/{id}/assay` | Categories: `finished_jewellery`, `scrap`, `dust`, `wip`. Assay updates show declared vs assayed fineness. |
+| **Reconciliation Engine** | `AppShell` -> Reconciliation | `POST /api/v1/jobs/{id}/reconcile`<br>`GET /api/v1/reconciliations`<br>`GET /api/v1/reconciliations/compare` | Displays fine gold balance equation. Clearly labels `lossAllowancePct` as **"Manufacturing Allowance"**. Shows historical versions (`v1`, `v2`). |
+| **Exceptions & AI** | `AppShell` -> Exceptions | `POST /api/v1/exceptions/detect`<br>`GET /api/v1/exceptions`<br>`POST /api/v1/investigations/run`<br>`POST /api/v1/exceptions/{id}/resolve` | AI assistant provides verified facts grounded in database record IDs. |
+| **Commercial Settlements** | `AppShell` -> Settlements | `POST /api/v1/settlements/rules`<br>`GET /api/v1/settlements/rules`<br>`POST /api/v1/settlements/worksheets`<br>`POST /api/v1/settlements/worksheets/{id}/approve` | Amounts formatted as Indian Rupees (`₹#,##0.00`). Clearly labels `wastageAllowanceFineG` as **"Contractual Wastage Allowance"**. |
 
-2. **Start Frontend (Terminal 2):**
-   ```bash
-   cd ..
-   export VITE_API_BASE_URL=http://localhost:8000/api/v1
-   npm run dev
-   ```
-   Open `http://localhost:5173` in your browser.
+### Formatting Standards in UI
+- **Grams:** `value.toFixed(3) + " g"` (e.g. `24.500 g`). Never truncate or round to 2 decimals.
+- **Fineness:** `(value / 1000).toFixed(3)` for decimal fraction or `value.toFixed(1) + " ppt"` for millesimal fineness.
+- **Currency:** `new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(value)` (e.g. `₹11,025.00`).
+

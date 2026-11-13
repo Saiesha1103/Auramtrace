@@ -62,10 +62,10 @@ def detect_exceptions_for_job(db: Session, user: User, job: JobOrder) -> list[Ex
     )
     if latest_run and latest_run.unexplained_variance_fine_g > latest_run.loss_allowance_fine_g:
         diff = latest_run.unexplained_variance_fine_g - latest_run.loss_allowance_fine_g
-        code = f"EX-{job.code}-V"
+        code = f"EX-{job.code[:14]}-V"[:24]
+        sev = ExceptionSeverity.critical if diff >= Decimal("0.500") else (ExceptionSeverity.high if diff >= Decimal("0.100") else ExceptionSeverity.medium)
         existing = db.scalar(select(ExceptionCase).where(ExceptionCase.organisation_id == org, ExceptionCase.code == code))
         if not existing:
-            sev = ExceptionSeverity.critical if diff >= Decimal("0.500") else (ExceptionSeverity.high if diff >= Decimal("0.100") else ExceptionSeverity.medium)
             ex = ExceptionCase(
                 organisation_id=org,
                 code=code,
@@ -84,6 +84,15 @@ def detect_exceptions_for_job(db: Session, user: User, job: JobOrder) -> list[Ex
             )
             db.add(ex)
             created_cases.append(ex)
+        elif existing.status == ExceptionStatus.open:
+            existing.severity = sev
+            existing.description = f"{float(latest_run.unexplained_variance_fine_g):.3f} g fine gold unexplained variance exceeds {float(latest_run.loss_allowance_fine_g):.3f} g allowance ({float(job.loss_allowance_pct):.1f}%)"
+            existing.observed_value = f"{float(latest_run.unexplained_variance_fine_g):.3f} g fine"
+            existing.variance_amount_g = diff
+            rec_ids = list(existing.supporting_record_ids or [])
+            if str(latest_run.id) not in rec_ids:
+                rec_ids.append(str(latest_run.id))
+                existing.supporting_record_ids = rec_ids
 
     # 2. Purity / Fineness Mismatch on returns
     returns = list(
@@ -93,7 +102,7 @@ def detect_exceptions_for_job(db: Session, user: User, job: JobOrder) -> list[Ex
         if r.assayed_fineness_ppt is not None and (r.declared_fineness_ppt - r.assayed_fineness_ppt) >= Decimal("20.0"):
             diff_ppt = r.declared_fineness_ppt - r.assayed_fineness_ppt
             deficit_fine = (r.net_metal_weight_g * diff_ppt / Decimal("1000.0")).quantize(Decimal("0.001"))
-            code = f"EX-{job.code}-P-{r.code}"
+            code = f"EX-{job.code[:8]}-P-{r.code[-8:]}"[:24]
             existing = db.scalar(select(ExceptionCase).where(ExceptionCase.organisation_id == org, ExceptionCase.code == code))
             if not existing:
                 ex = ExceptionCase(
@@ -114,6 +123,10 @@ def detect_exceptions_for_job(db: Session, user: User, job: JobOrder) -> list[Ex
                 )
                 db.add(ex)
                 created_cases.append(ex)
+            elif existing.status == ExceptionStatus.open:
+                existing.description = f"Return {r.code} declared {float(r.declared_fineness_ppt):.1f} ppt but assayed {float(r.assayed_fineness_ppt):.1f} ppt (deficit of {float(deficit_fine):.3f} g fine gold)"
+                existing.observed_value = f"{float(r.assayed_fineness_ppt):.1f} ppt"
+                existing.variance_amount_g = deficit_fine
 
     # 3. Unacknowledged transfers and issues (older than 2 days)
     events = list(
@@ -130,7 +143,7 @@ def detect_exceptions_for_job(db: Session, user: User, job: JobOrder) -> list[Ex
     for e in events:
         if fu[e.id].reversal_id is None and (fu[e.id].acknowledgement_id is None or fu[e.id].acknowledgement_reversed):
             # Check if pending or overdue
-            code = f"EX-{job.code}-U-{str(e.id)[:8]}"
+            code = f"EX-{job.code[:8]}-U-{str(e.id)[:8]}"[:24]
             existing = db.scalar(select(ExceptionCase).where(ExceptionCase.organisation_id == org, ExceptionCase.code == code))
             if not existing:
                 rec = e.recorded_at if e.recorded_at.tzinfo is not None else e.recorded_at.replace(tzinfo=UTC)
@@ -157,7 +170,7 @@ def detect_exceptions_for_job(db: Session, user: User, job: JobOrder) -> list[Ex
 
     # 4. Overdue job with outstanding WIP
     if job.due_date < now.date() and job.status in (JobStatus.draft, JobStatus.issued, JobStatus.in_production):
-        code = f"EX-{job.code}-OVERDUE"
+        code = f"EX-{job.code[:14]}-DUE"[:24]
         existing = db.scalar(select(ExceptionCase).where(ExceptionCase.organisation_id == org, ExceptionCase.code == code))
         if not existing:
             holdings = job_holdings(db, job.id)

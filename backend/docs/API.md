@@ -1178,6 +1178,41 @@ Request:
 Executes the deterministic fine-gold reconciliation equation:
 $$\text{Issued Fine Gold} = \text{Finished Jewellery Fine} + \text{Returned Scrap Fine} + \text{Retained Scrap Fine} + \text{Closing WIP Fine} + \text{Documented Loss} + \text{Unexplained Variance}$$
 
+### Dual Loss Allowance Architecture: Manufacturing vs. Commercial
+
+AURUMTRACE strictly separates physical engineering tolerances from commercial contractual recovery rules:
+
+| Attribute | Location | Governed By | Purpose | Authoritative For |
+|---|---|---|---|---|
+| **Shop-Floor Loss Allowance** | `JobOrder.loss_allowance_pct` | Production / Goldsmithing Engineering | Acceptable physical mass loss during casting, filing, and polishing | `ReconciliationRun.status` (`within_allowance` vs `above_allowance`) |
+| **Commercial Wastage Allowance** | `SettlementRule.loss_allowance_pct` | Commercial Artisan Agreement | Maximum unrecovered fine gold absorbed by manufacturer before financial recovery | `SettlementWorksheet.wastage_allowance_fine_g` and excess recovery deductions |
+
+*Why they differ:* A delicate bridal choker may have a physical workshop tolerance of `1.2%` due to intricate filigree loss, while the commercial agreement with the master artisan may grant a contractual wastage ceiling of `1.5%`. If actual loss is `0.595 g` against `36.640 g` issued:
+- Reconciliation flags `above_allowance` because $0.595\text{ g} > 0.440\text{ g}$ ($1.2\%$).
+- Commercial settlement uses $0.550\text{ g}$ ($1.5\%$), deducting recovery only on the excess: $0.595 - 0.550 = 0.045\text{ g}$.
+
+### Laboratory Assay Corrections & Versioned Reconciliation Snapshots
+
+When laboratory fire assay or XRF spectrometry is performed on a returned item:
+1. `POST /api/v1/returns/{id}/assay` updates `MaterialReturn.assayed_fineness_ppt` and recalculates `fine_gold_g = net_metal_weight_g × assayed_fineness_ppt ÷ 1000`.
+2. The original `declared_fineness_ppt` remains **immutable** for audit forensics.
+3. Re-triggering `POST /api/v1/jobs/{id}/reconcile` creates an immutable new snapshot `REC-{code}-v2` with `run_number = 2` and `is_latest = true`.
+4. The previous run `REC-{code}-v1` has its `is_latest` flag set to `false`, but all historical numbers, line items, and event references remain completely **immutable**.
+
+### Prevention of Double-Counting in Settlements
+
+The fine-gold reconciliation equation accounts for all metal:
+$$\text{Actual Loss (Fine)} = \text{Total Issued Fine} - (\text{Finished Fine (Assayed)} + \text{Scrap Fine} + \text{WIP Fine})$$
+This actual loss inherently captures both:
+1. **Physical Loss:** $\text{Gross Issued Net Metal} - \text{Total Returned Net Metal}$
+2. **Assay Purity Deficit:** $\text{Finished Net Metal} \times (\text{Declared Fineness} - \text{Assayed Fineness}) \div 1000$
+
+Commercial recovery is computed directly against the single authoritative variance:
+$$\text{Excess Loss Fine} = \max(0, \text{Actual Loss Fine} - \text{Contractual Wastage Allowance})$$
+$$\text{Gold Recovery Deduction} = \text{Excess Loss Fine} \times \text{Gold Rate Applied}$$
+
+The assay shortfall is **NOT** deducted a second time. Purity deficits simply reduce the accounted fine gold in the reconciliation equation, flowing mathematically into the single variance without double-counting.
+
 Response:
 ```json
 {

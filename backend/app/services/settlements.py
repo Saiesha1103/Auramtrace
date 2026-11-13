@@ -127,8 +127,14 @@ def generate_settlement_worksheet(db: Session, user: User, req: SettlementWorksh
 
     labour_amount = (finished_gross * labour_rate).quantize(GRAM)
 
-    # Wastage and excess loss recovery calculation
-    wastage_allowance_fine = recon.loss_allowance_fine_g
+    # Wastage and excess loss recovery calculation:
+    # If a commercial settlement rule is attached, its contractual loss allowance percentage governs the commercial settlement.
+    # Otherwise, fallback to the job order's manufacturing reconciliation allowance.
+    if rule and rule.loss_allowance_pct is not None:
+        wastage_allowance_fine = (recon.total_issued_fine_g * (rule.loss_allowance_pct / Decimal("100.0"))).quantize(GRAM)
+    else:
+        wastage_allowance_fine = recon.loss_allowance_fine_g
+
     actual_loss_fine = recon.unexplained_variance_fine_g
 
     excess_loss_fine = max(ZERO, (actual_loss_fine - wastage_allowance_fine)).quantize(GRAM)
