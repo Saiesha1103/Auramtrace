@@ -125,3 +125,41 @@ docker exec -t aurumtrace-pg-prod pg_dump -U aurumtrace -Fc aurumtrace_prod > au
 # Terminate existing connections and restore
 docker exec -i aurumtrace-pg-prod pg_restore -U aurumtrace -d aurumtrace_prod --clean --if-exists < aurumtrace_backup.dump
 ```
+
+---
+
+## 7. Active Cloud Deployments & Production Launch Verification
+
+AURUMTRACE has been provisioned and verified on live cloud infrastructure:
+
+### 7.1 Production Service Endpoints
+- **Live Backend API (FastAPI + Render Oregon):** `https://aurumtrace-api-p1rr.onrender.com`
+- **Interactive OpenAPI Documentation:** `https://aurumtrace-api-p1rr.onrender.com/docs`
+- **Health Check Probe:** `https://aurumtrace-api-p1rr.onrender.com/health` (Returns HTTP 200 `{"status":"ok","version":"0.1.0","env":"production"}`)
+- **Managed Database (PostgreSQL):** Render Managed PostgreSQL cluster (`dpg-dbhn1pmgekts73bnanc0-a`), database `aurumtrace` with Alembic head migrations (`0001_phase1`, `0002_phase2`)
+- **Live Frontend (Vite + React + TypeScript on Vercel Edge):** `https://aurumtrace-web-gamma.vercel.app`
+
+### 7.2 End-to-End Live Verification Summary
+The production cloud environment was verified via an automated 15-step live audit (`scratch/run_live_e2e_verification.py`):
+1. **Admin Authentication:** Authenticated as `admin@aurumtrace.com` (`Niharika Singh (Enterprise Admin)`).
+2. **Karigar Hierarchy:** `PROD-K01` (Master Goldsmith Harish - Head Karigar) and `PROD-K02` (Setter Rajesh - Team Karigar).
+3. **Job Order:** `J-0001` (Kundan Polki Bridal Choker 22K).
+4. **Bullion Lot:** `L-0001` received into vault (100.000 g gross, 916.0 ppt fineness $\rightarrow$ 91.600 g fine gold).
+5. **Vault Issuance:** 40.000 g gross (36.640 g fine gold) issued from `L-0001` to `PROD-K01`.
+6. **Karigar Receipt Acknowledgement:** Verified and digitally acknowledged by Harish.
+7. **Multi-level Transfer:** 15.000 g transferred from `PROD-K01` to `PROD-K02` for stone setting.
+8. **Transfer Acknowledgement:** Verified and digitally signed by Rajesh.
+9. **Manufacturing Measurement:** In-process stage measurement recorded (Input 15.000 g $\rightarrow$ Output 14.850 g on scale `SC-BENCH-02`).
+10. **Vault Returns:**
+    - Finished Jewellery: `RET-0001` (24.500 g gross, assayed at 912.0 ppt $\rightarrow$ 22.344 g fine gold).
+    - Scrap from Harish: `RET-0002` (0.500 g gross, 916.0 ppt $\rightarrow$ 0.458 g fine gold).
+    - Scrap from Rajesh: `RET-0003` (14.850 g gross, 916.0 ppt $\rightarrow$ 13.603 g fine gold).
+    - Total Gross Metal Accounted: $24.500 + 0.500 + 14.850 = 39.850$ g (0.150 g setting loss).
+11. **Deterministic Fine-Gold Reconciliation:** Run `REC-J-0001-v2` calculated exact fine gold balance (36.640 g issued vs 36.405 g accounted $\rightarrow$ 0.235 g unexplained variance, within 1.2% contractual allowance of 0.440 g).
+12. **Exception Detection:** Laboratory fire assay shortfall simulated on `RET-0001` (890.0 ppt vs 916.0 ppt $\rightarrow$ 26.0 ppt deficit $\ge 20.0$ ppt threshold). Detected `EX-J-0001-V` (High variance) and `EX-J-0001-P-RET-0001` (Medium purity mismatch).
+13. **AI Investigation Assistant:** Triggered for `EX-J-0001-V`. Analyzed discrepancy using read-only tools and generated evidence-grounded root cause findings (confidence 0.94).
+14. **Commercial Settlement Rule & Worksheet:**
+    - Rule `SR-0001`: Labour rate INR 450.00/g, Loss allowance 1.5%, Gold rate INR 6,800.00/g.
+    - Worksheet `SW-0001`: Gross Labour INR 11,025.00, Gold Recovery deduction INR 2,271.20, Net Payable to Karigar INR 8,753.80.
+15. **Formally Approved Settlement:** Submitted and formally approved by Enterprise Admin. Job `J-0001` transitioned to `settled`.
+

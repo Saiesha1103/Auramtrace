@@ -161,3 +161,16 @@ tests/test_workflows_e2e.py ........                                     [100%]
 - **Target Branch:** `feat/landing-page`
 - **Containerization:** Multi-stage `Dockerfile` with non-root security compliance (`aurum` user UID 10001) and health check endpoint.
 - **Production Readiness Sign-off:** APPROVED FOR INTEGRATION.
+
+---
+
+## 8. Live Cloud Deployment & End-to-End Verification Sign-off
+
+- **Live Backend API:** `https://aurumtrace-api-p1rr.onrender.com`
+- **Live Frontend App:** `https://aurumtrace-web-gamma.vercel.app`
+- **Managed Database:** Render Managed PostgreSQL cluster (`aurumtrace` database)
+- **OpenAPI / Swagger Documentation:** `https://aurumtrace-api-p1rr.onrender.com/docs`
+- **Health Check Endpoint:** `https://aurumtrace-api-p1rr.onrender.com/health` (HTTP 200 OK)
+- **15-Step E2E Verification:** Passed with 100% success on live production infrastructure.
+- **Pull Request Status:** PR #4 (`https://github.com/Saiesha1103/Auramtrace/pull/4`) open and ready for approval.
+- **Production Status:** LIVE AND OPERATIONAL.
