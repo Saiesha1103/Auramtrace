@@ -9,6 +9,7 @@ Features:
 """
 
 import json
+import logging
 import uuid
 from datetime import datetime
 from decimal import Decimal
@@ -17,7 +18,10 @@ from typing import Any, Protocol
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from ..config import get_settings
 from ..errors import BusinessRuleViolation, NotFound
+
+logger = logging.getLogger("aurumtrace.ai")
 from ..models import (
     CustodianType,
     ExceptionCase,
@@ -465,6 +469,56 @@ class DeterministicEvidenceAiProvider:
         }
 
 
+class GeminiAiProvider:
+    """External Google Gemini AI provider for grounded investigation summaries.
+
+    Uses structured JSON responses, strictly read-only inspection context,
+    and grounds assertions against verified database records.
+    """
+
+    def __init__(self, api_key: str, model: str = "gemini-2.5-flash"):
+        self.api_key = api_key
+        self.model = model
+
+    def investigate(self, context: dict[str, Any]) -> dict[str, Any]:
+        import httpx
+
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:generateContent?key={self.api_key}"
+        system_instruction = (
+            "You are an expert forensic goldsmith auditor and AI investigation assistant for AURUMTRACE. "
+            "Analyze the provided workshop facts, ledger events, assay measurements, and reconciliation data. "
+            "You are STRICTLY READ-ONLY. You cannot alter balances, cancel records, or approve transactions. "
+            "Every verified fact and evidence item MUST be grounded in the provided database record IDs. "
+            "Return valid JSON matching this schema: "
+            "{ 'exceptionId': str, 'jobId': str, 'summary': str, 'verifiedFacts': list, 'suspectedCauses': list, "
+            "'calculationBreakdown': dict, 'evidence': list, 'missingEvidence': list, 'recommendedActions': list, "
+            "'confidence': float, 'limitations': list, 'generatedAt': str }"
+        )
+        payload = {
+            "contents": [
+                {
+                    "role": "user",
+                    "parts": [{"text": f"System: {system_instruction}\n\nEvidence Context:\n{json.dumps(context, indent=2)}"}]
+                }
+            ],
+            "generationConfig": {
+                "responseMimeType": "application/json",
+                "temperature": 0.1,
+            }
+        }
+        try:
+            with httpx.Client(timeout=15.0) as client:
+                res = client.post(url, json=payload)
+                res.raise_for_status()
+                data = res.json()
+                text = data["candidates"][0]["content"]["parts"][0]["text"]
+                parsed = json.loads(text)
+                return parsed
+        except Exception as e:
+            logger.warning("Gemini AI API call failed or timed out: %s; falling back to deterministic provider", str(e))
+            raise
+
+
 # ------------------------------------------------------------------ INVESTIGATION RUNNER
 
 
@@ -484,15 +538,29 @@ def run_investigation(db: Session, user: User, exception_id: uuid.UUID) -> Inves
         "reconciliation": tool_get_reconciliation(db, org, job.id),
     }
 
-    provider = DeterministicEvidenceAiProvider()
-    response_data = provider.investigate(context)
+    settings = get_settings()
+    provider_name = "deterministic_evidence_v1"
+    response_data = None
+
+    if settings.ai_provider == "gemini" and settings.gemini_api_key:
+        try:
+            gemini_provider = GeminiAiProvider(api_key=settings.gemini_api_key, model=settings.gemini_model)
+            response_data = gemini_provider.investigate(context)
+            provider_name = f"gemini_{settings.gemini_model}"
+        except Exception:
+            fallback = DeterministicEvidenceAiProvider()
+            response_data = fallback.investigate(context)
+            provider_name = "deterministic_evidence_v1 (gemini_fallback)"
+    else:
+        fallback = DeterministicEvidenceAiProvider()
+        response_data = fallback.investigate(context)
 
     # Persist the investigation run
     run = InvestigationRun(
         organisation_id=org,
         exception_id=case.id,
         job_id=job.id,
-        provider="deterministic_evidence_v1",
+        provider=provider_name,
         response_json=response_data,
         prompt_summary=f"Investigate exception {case.code} ({case.exception_type.value}) for job {job.code}",
         confidence=response_data.get("confidence", 0.90),

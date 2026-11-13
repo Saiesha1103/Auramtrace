@@ -22,6 +22,11 @@ class Settings(BaseSettings):
     allow_registration: bool = True
     sql_echo: bool = False
 
+    # AI Investigation Assistant settings
+    ai_provider: str = "deterministic"  # "deterministic" | "gemini"
+    gemini_api_key: str | None = None
+    gemini_model: str = "gemini-2.5-flash"
+
     @field_validator("cors_origins", mode="before")
     @classmethod
     def _split_origins(cls, v: object) -> object:

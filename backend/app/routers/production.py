@@ -78,6 +78,7 @@ def _to_meas_out(m: ProductionMeasurement) -> ProductionMeasurementOut:
 
 
 @router.post("", response_model=ProductionEntryOut, status_code=status.HTTP_201_CREATED, responses=ERROR_RESPONSES)
+@router.post("/entries", response_model=ProductionEntryOut, status_code=status.HTTP_201_CREATED, responses=ERROR_RESPONSES, include_in_schema=False)
 def post_production_entry(req: ProductionEntryCreate, db: DB, user: VaultOperator):
     """Start or record a production stage for a job with a karigar."""
     entry = create_production_entry(db, user, req)
@@ -86,6 +87,7 @@ def post_production_entry(req: ProductionEntryCreate, db: DB, user: VaultOperato
 
 
 @router.get("", response_model=Page[ProductionEntryOut], responses=ERROR_RESPONSES)
+@router.get("/entries", response_model=Page[ProductionEntryOut], responses=ERROR_RESPONSES, include_in_schema=False)
 def get_production_entries(
     db: DB,
     user: CurrentUser,

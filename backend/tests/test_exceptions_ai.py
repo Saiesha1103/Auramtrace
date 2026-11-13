@@ -173,3 +173,27 @@ def test_ai_tools_read_only_access(client, exception_world):
 
     bal = client.get(f"/api/v1/investigations/tools/calculate_fine_gold_balance?jobId={w['job']['id']}", headers=h).json()
     assert "issuedFineG" in bal
+
+
+def test_ai_provider_gemini_fallback(client, exception_world, monkeypatch):
+    """Verify that when Gemini provider is configured with an invalid/mocked key, it safely falls back to deterministic provider."""
+    w = exception_world
+    h = w["h"]
+
+    detect_r = client.post(f"/api/v1/exceptions/detect?jobId={w['job']['id']}", headers=h).json()
+    case = detect_r[0]
+
+    # Configure Gemini with a dummy key and simulate network failure
+    from app.config import get_settings
+    settings = get_settings()
+    monkeypatch.setattr(settings, "ai_provider", "gemini")
+    monkeypatch.setattr(settings, "gemini_api_key", "synthetic-invalid-gemini-key")
+
+    ai_r = client.post("/api/v1/investigations/run", headers=h, json={"exceptionId": case["id"]})
+    assert ai_r.status_code == 201
+    inv = ai_r.json()
+
+    # Provider should indicate fallback
+    assert "gemini_fallback" in inv["provider"]
+    assert inv["response"]["summary"]
+    assert len(inv["response"]["verifiedFacts"]) >= 1

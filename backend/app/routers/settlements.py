@@ -94,6 +94,12 @@ def get_rules(db: DB, user: CurrentUser):
     return [_to_rule_out(r) for r in rules]
 
 
+@router.get("/rules/{id}", response_model=SettlementRuleOut, responses=ERROR_RESPONSES)
+def get_rule_by_id(id: uuid.UUID, db: DB, user: CurrentUser):
+    rule = get_in_org(db, SettlementRule, user.organisation_id, id, "Settlement rule")
+    return _to_rule_out(rule)
+
+
 @router.post("/worksheets", response_model=SettlementWorksheetOut, status_code=status.HTTP_201_CREATED, responses=ERROR_RESPONSES)
 def post_worksheet(req: SettlementWorksheetCreate, db: DB, user: Manager):
     """Generate a draft commercial settlement worksheet based on fine-gold reconciliation."""

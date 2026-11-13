@@ -2,10 +2,10 @@ import { useEffect, useMemo, useRef, useState, type ComponentType } from 'react'
 import { Icon, IconDefs } from '../components/Icon';
 import { Logo } from '../components/Nav';
 import { PAGES, href, navigate, useRoute, type PageKey } from './router';
-import { useAppState, resetDemo } from './data/store';
+import { useAppState, resetDemo, syncWithBackend } from './data/store';
 import { AS_OF } from './data/seed';
 import { fmtDate } from './data/calc';
-import { DATA_SOURCE_NOTE } from './data/api';
+import { subscribeApiState, getApiState, type ApiState } from './data/api';
 import { Dashboard } from './pages/Dashboard';
 import { Karigars } from './pages/Karigars';
 import { Jobs } from './pages/Jobs';
@@ -120,8 +120,27 @@ function QuickSearch() {
 function Topbar({ onMenu }: { onMenu: () => void }) {
   const { page, id } = useRoute();
   const s = useAppState();
+  const [apiState, setApiState] = useState<ApiState>(getApiState());
+
+  useEffect(() => {
+    return subscribeApiState(setApiState);
+  }, []);
+
   const localActions = s.audit.filter((a) => a.source === 'local-demo').length;
   const label = PAGES.find((p) => p.key === page)?.label;
+
+  const chipLabel =
+    apiState.status === 'connected'
+      ? `Live API · ${apiState.user?.fullName || 'Admin'}`
+      : apiState.status === 'connecting'
+      ? 'Connecting to API…'
+      : 'Demo offline fallback';
+
+  const chipTitle =
+    apiState.status === 'connected'
+      ? `Connected to authoritative backend ledger at ${apiState.url}`
+      : `No API connected (${apiState.url}). Showing synthetic seed data.`;
+
   return (
     <header className="tb">
       <button className="icon-btn tb-menu" onClick={onMenu} aria-label="Open navigation">
@@ -138,9 +157,25 @@ function Topbar({ onMenu }: { onMenu: () => void }) {
       </nav>
       <QuickSearch />
       <div className="tb-right">
-        <span className="tb-chip" title={DATA_SOURCE_NOTE}>
-          <i className="tb-dot" aria-hidden="true" />
-          <span className="tb-chip-text">{DATA_SOURCE_NOTE}</span>
+        <span
+          className={`tb-chip ${apiState.status === 'connected' ? 'tb-chip-live' : ''}`}
+          title={chipTitle}
+          onClick={() => syncWithBackend()}
+          style={{ cursor: 'pointer' }}
+        >
+          <i
+            className="tb-dot"
+            aria-hidden="true"
+            style={{
+              backgroundColor:
+                apiState.status === 'connected'
+                  ? '#10b981'
+                  : apiState.status === 'connecting'
+                  ? '#f59e0b'
+                  : '#94a3b8',
+            }}
+          />
+          <span className="tb-chip-text">{chipLabel}</span>
         </span>
         <span className="tb-chip tb-hide-sm">As of {fmtDate(AS_OF)}</span>
         {localActions > 0 && (
