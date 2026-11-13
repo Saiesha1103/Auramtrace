@@ -6,11 +6,22 @@ from sqlalchemy import func, or_, select
 from ..deps import DB, CurrentUser, Manager
 from ..errors import BusinessRuleViolation
 from ..models import JobOrder, JobStatus, Karigar, KarigarKind
-from ..schemas import ERROR_RESPONSES, JobCreate, JobDetail, JobOut, JobUpdate, Page
+from ..schemas import (
+    ERROR_RESPONSES,
+    CustodyLineageGraph,
+    JobCreate,
+    JobDetail,
+    JobLineageOut,
+    JobOut,
+    JobSplitRequest,
+    JobUpdate,
+    Page,
+)
 from ..services import audit
 from ..services.codes import ensure_unique_code, next_code
 from ..services.custody import get_in_org
 from ..services.ledger import job_issued_total
+from ..services.transfers import get_custody_lineage_graph, get_job_lineage, split_job
 from ..services.views import job_detail
 
 router = APIRouter(prefix="/jobs", tags=["Jobs"], responses=ERROR_RESPONSES)
@@ -89,3 +100,24 @@ def update_job(job_id: uuid.UUID, body: JobUpdate, user: Manager, db: DB) -> Job
         audit.record(db, user, user.organisation_id, "job.updated", "job_order", job.id, diff)
     db.commit()
     return JobOut.model_validate(job)
+
+
+@router.post("/{job_id}/split", response_model=JobOut, status_code=status.HTTP_201_CREATED, summary="Split a job into a child job (admin, manager)")
+def post_split_job(job_id: uuid.UUID, body: JobSplitRequest, user: Manager, db: DB) -> JobOut:
+    parent = get_in_org(db, JobOrder, user.organisation_id, job_id, "Parent job")
+    child, _ = split_job(db, user, parent, body)
+    db.commit()
+    return JobOut.model_validate(child)
+
+
+@router.get("/{job_id}/lineage", response_model=JobLineageOut, summary="View parent-child job lineage")
+def get_lineage(job_id: uuid.UUID, user: CurrentUser, db: DB) -> JobLineageOut:
+    job = get_in_org(db, JobOrder, user.organisation_id, job_id, "Job")
+    return get_job_lineage(db, user.organisation_id, job)
+
+
+@router.get("/{job_id}/custody-lineage", response_model=CustodyLineageGraph, summary="View metal custody movement graph for a job")
+def get_custody_lineage(job_id: uuid.UUID, user: CurrentUser, db: DB) -> CustodyLineageGraph:
+    get_in_org(db, JobOrder, user.organisation_id, job_id, "Job")
+    return get_custody_lineage_graph(db, user.organisation_id, job_id)
+

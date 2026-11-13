@@ -15,21 +15,51 @@ export const DATA_SOURCE_NOTE =
     ? 'Synthetic demo data · no API connected'
     : 'API URL set, but no endpoint contract is implemented yet · showing synthetic demo data';
 
-export interface AiExplanationError {
-  ok: false;
-  error: string;
+export interface AiExplanationResult {
+  ok: boolean;
+  text?: string;
+  error?: string;
+  data?: any;
 }
 
+export type AiExplanationError = AiExplanationResult;
+
 /** Requests an AI explanation for an exception. Never fabricates a result. */
-export async function requestAiExplanation(exceptionId: string): Promise<AiExplanationError> {
+export async function requestAiExplanation(exceptionId: string): Promise<AiExplanationResult> {
   if (!API_BASE) {
     return {
       ok: false,
       error: `No AI investigation service is configured (VITE_API_BASE_URL is not set). No explanation was generated for ${exceptionId}.`,
     };
   }
-  return {
-    ok: false,
-    error: `An API base URL is configured, but this repository has no AI explanation endpoint contract yet. No explanation was generated for ${exceptionId}.`,
-  };
+  try {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('aurum_token') : null;
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    };
+    const res = await fetch(`${API_BASE}/investigations/run`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ exceptionId }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      return {
+        ok: false,
+        error: err.detail || err.message || `AI Investigation API failed with status ${res.status}`,
+      };
+    }
+    const data = await res.json();
+    return {
+      ok: true,
+      text: data.response?.summary || 'AI investigation completed successfully.',
+      data,
+    };
+  } catch (err: any) {
+    return {
+      ok: false,
+      error: `Network error contacting AI Investigation API at ${API_BASE}: ${err.message}`,
+    };
+  }
 }
