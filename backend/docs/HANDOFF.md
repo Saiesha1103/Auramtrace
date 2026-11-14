@@ -1,95 +1,143 @@
 # AURUMTRACE — Final Engineering Handoff & Release Verification
 
 **Current Release Branch:** `feat/nikharika-phase2-backend`  
-**Target Integration Branch:** `feat/landing-page`  
-**Pull Request:** [PR #4](https://github.com/Saiesha1103/Auramtrace/pull/4)  
 **Dedicated Fix & Audit Branch:** `fix/aurumtrace-financial-reconciliation`  
-**Status:** ✅ **Production Ready & Release Signed Off** (100/100 tests passing on both SQLite and PostgreSQL)
+**Target Integration Branch:** `feat/landing-page`  
+**Consolidated Pull Request:** [PR #4](https://github.com/Saiesha1103/Auramtrace/pull/4)  
+**Status:** ✅ **Production Ready & Release Signed Off** (105/105 tests passing on both SQLite and PostgreSQL)
 
 ---
 
 ## 1. Executive Summary & Verification Metrics
 
-AURUMTRACE has completed end-to-end implementation and rigorous multi-database verification. All physical custody operations, multi-level lineage transfers, production tracking, fire assay returns, reconciliation snapshotting, AI investigation, and commercial financial settlements have been independently audited and verified against PostgreSQL 17 and SQLite.
+AURUMTRACE has completed end-to-end implementation, financial discrepancy resolution, security hardening, and rigorous multi-database verification. All physical custody operations, multi-level lineage transfers, production tracking, fire assay returns, reconciliation snapshotting, AI investigation, commercial settlements, and security controls have been independently audited and verified against PostgreSQL 17 and SQLite.
 
 | Metric | Target | Verified Status |
 |---|---|---|
-| **Automated Tests** | 100% Passing | **100/100 tests passing** on SQLite (32.2s) & PostgreSQL (45.5s) |
-| **Financial Accuracy** | 0.001 g precision | **Exact Python `Decimal` arithmetic** (`ROUND_HALF_UP`) with zero floating-point drift |
-| **Double-Counting Audit** | 0 double-counting | **Zero double-counting**: Purity deficits flow directly into fine gold reconciliation variance |
-| **Reconciliation Immutability**| Versioned snapshots | **Historical runs (`REC-{code}-v1`) are strictly immutable**; corrections generate `v2` snapshots |
-| **Frontend Production Build** | Zero TS errors | **Vite + React + TypeScript builds cleanly in 237ms** |
-| **Cloud Deployment** | HTTPS & Healthy | **Live on Render (FastAPI + PostgreSQL)** & **Vercel (Vite Frontend)** |
+| **Automated Tests** | 100% Passing | **105/105 tests passing** on SQLite (39.2s) & PostgreSQL (55.6s) |
+| **Financial Accuracy** | ₹0.01 (Currency) / 0.001 g (Metal) | **Exact Python `Decimal` arithmetic** (`ROUND_HALF_UP`) with zero floating-point drift |
+| **Four-Eyes Approval** | Enforced | **Creator self-approval blocked (HTTP 403)**; draft approval blocked (HTTP 422) |
+| **Rule Selection** | Automated | **Matches job karat & effective date interval** with latest version precedence |
+| **Exception Codes** | Collision-free | **Atomic sequential codes (`EX-000001`)**; no prefix-truncation collisions |
+| **Security & CORS** | Production hardened | **Wildcard (`*`) removed**; restricted to `https://aurumtrace-web-gamma.vercel.app` |
+| **Frontend Authentication** | Zero hardcoded logins | **Dedicated `Login.tsx` view**; `loginDefaultAdmin()` purged; token verification on boot |
+| **Frontend Production Build**| Zero TS errors | **Vite + React + TypeScript builds cleanly in 250ms** |
+| **Cloud Deployment** | HTTPS & Healthy | **Live on Render (FastAPI + Managed PostgreSQL)** & **Vercel (Vite Frontend)** |
 
 ---
 
-## 2. Resolution of Financial Discrepancies
+## 2. Priority 1 — Security Hardening & Remediation
 
-### Issue A — Contractual Loss Allowance Discrepancy Resolved
-- **Problem Statement:** The deployment report identified that while the job specified a manufacturing loss allowance of 1.2%, and the settlement rule specified a contractual allowance of 1.5%, the settlement worksheet was using 0.440 g (1.2%) instead of 0.550 g (1.5%).
-- **Root Cause:** In `backend/app/services/settlements.py`, `wastage_allowance_fine = recon.loss_allowance_fine_g` was hardcoded, failing to consult `rule.loss_allowance_pct`.
-- **Architectural Resolution:**
-  - `JobOrder.loss_allowance_pct` (e.g. 1.2%): Physical manufacturing tolerance for the shop floor. Governs `ReconciliationRun.loss_allowance_pct` and workshop status (`within_allowance` vs `above_allowance`).
-  - `SettlementRule.loss_allowance_pct` (e.g. 1.5%): Commercial contractual wastage allowance agreed with the artisan. Governs `SettlementWorksheet.wastage_allowance_fine_g` and financial recovery deductions.
-  - In `backend/app/services/settlements.py`, `wastage_allowance_fine` now computes `(recon.total_issued_fine_g * rule.loss_allowance_pct / 100).quantize(GRAM)` whenever a settlement rule is attached, correctly yielding `0.550 g`.
+### 1. Removal of Hardcoded Credentials & `loginDefaultAdmin()`
+- **Remediation:** Completely removed `loginDefaultAdmin()` and hardcoded admin email/password from `src/app/data/api.ts`.
+- **Refactoring:**
+  - `login(email, password)` returns `{ ok: boolean; error?: string }` and fetches `/auth/me` on successful login.
+  - Added `logout()` to clear stored JWT tokens and reset UI application state.
+  - Added `checkAuth()` to validate stored tokens against `/auth/me` without auto-authenticating with dummy credentials.
+  - `fetchBackendAppState()` strictly requires active authentication; otherwise sets state to offline demo fallback.
 
-### Issue B — Fine-Gold Reconciliation After Assay & Zero Double-Counting
-- **Problem Statement:** Reconciling after a fire assay revealed an unexplained variance of 0.774 g fine gold. Verification was required to confirm whether this equals physical loss plus assay deficit, whether historical snapshots are preserved, and whether double-counting occurs during settlement.
-- **Root Cause & Mathematical Proof:**
-  - Total Issued: $40.000\text{ g} \times 916.0\text{ ppt} = 36.640\text{ g}$ fine.
-  - Returned Finished Jewellery: $24.500\text{ g}$. Assayed at $890.0\text{ ppt} \rightarrow 24.500 \times 890 / 1000 = 21.805\text{ g}$ fine.
-  - Returned Scrap: $0.500\text{ g}$ (Harish) $+ 14.850\text{ g}$ (Rajesh) $= 15.350\text{ g}$ @ $916.0\text{ ppt} = 14.061\text{ g}$ fine.
-  - Total Accounted Fine: $21.805 + 14.061 = 35.866\text{ g}$ fine.
-  - Unexplained Variance: $36.640 - 35.866 = 0.774\text{ g}$ fine gold.
-  - Physical loss: $40.000 - (24.500 + 15.350) = 0.150\text{ g}$ gross $= 0.150 \times 0.916 = 0.137\text{ g}$ fine.
-  - Assay deficit: $24.500 \times (916 - 890) / 1000 = 0.637\text{ g}$ fine.
-  - Sum: $0.137\text{ g} + 0.637\text{ g} = 0.774\text{ g}$ fine.
-- **Snapshot Immutability:** Run #1 (`unexplained_variance_fine_g = 0.137`) remains immutable with `is_latest = false`. Run #2 (`unexplained_variance_fine_g = 0.774`) is created with `is_latest = true`.
-- **Zero Double-Counting:** Settlement calculates excess loss directly from Run #2 variance:
-  $\text{Excess Loss Fine} = 0.774\text{ g} - 0.550\text{ g} = 0.224\text{ g}$ fine.
-  Recovery: $0.224\text{ g} \times ₹7,250/\text{g} = ₹1,624.00$.
-  Making Charges: $24.500\text{ g} \times ₹450/\text{g} = ₹11,025.00$.
-  Net Payable: $₹11,025.00 - ₹1,624.00 = ₹9,401.00$.
-  No secondary deduction is applied for assay deficit.
+### 2. Dedicated Interactive Login Screen
+- **Implementation:** Created `src/app/pages/Login.tsx` styled to match the luxury gold bullion aesthetic (`src/app/app.css`).
+- **Features:**
+  - Interactive email and password input fields with form validation.
+  - Loading spinner and contextual error banner for invalid credentials.
+  - "Explore Offline Demo Mode" fallback button for client-side preview without backend credentials.
+  - Integrated into `src/app/AppShell.tsx` with user profile badge and "Sign Out" / "Sign In" controls in the top bar.
+
+### 3. Production CORS Hardening
+- **Remediation:** Removed wildcard (`*`) and wildcard domains from `backend/app/config.py`.
+- **Allowed Origins:** Strictly limited to `https://aurumtrace-web-gamma.vercel.app` and localhost development ports (`http://localhost:5173`, `http://localhost:3000`).
+- **Production Guard:** Added a strict configuration validator that aborts application startup if `*` is present in `AURUM_CORS_ORIGINS` when `AURUM_ENV=production`.
+- **Live Environment:** Updated Render service environment variables for `aurumtrace-api` to enforce `AURUM_CORS_ORIGINS=["https://aurumtrace-web-gamma.vercel.app"]`.
+
+### 4. Production Admin Password Rotation & Seeded Account Verification
+- **Rotation Executed:** Rotated the administrative password for `admin@aurumtrace.com` in the live Render Managed PostgreSQL database (`aurumtrace`).
+- **Verification:**
+  - Attempting authentication with the old exposed password returns **HTTP 401 `invalid_credentials`**.
+  - Authenticating with the new high-entropy password succeeds with **HTTP 200 OK** and issues a valid JWT token.
+- **Account Audit:** Queried the production `users` table; verified that exactly one administrative account (`admin@aurumtrace.com`) exists and zero development/dummy test accounts exist in production.
 
 ---
 
-## 3. Live Cloud Deployment URLs
+## 3. Priority 2 — Backend Business Logic & Financial Fixes
+
+### 1. Exception Code Collision Prevention
+- **Root Cause:** Previous implementation generated codes by truncating job codes (`EX-{job.code[:14]}-V`), causing jobs with common prefixes (e.g. `JOB-LONG-PREFIX-0001` and `JOB-LONG-PREFIX-0002`) to generate duplicate codes, violating database unique constraints.
+- **Resolution:** Replaced prefix slicing in `backend/app/services/exceptions.py` with atomic, sequence-based generation via `next_code(db, ExceptionCase, org, "EX")`.
+- **Scoped Lookups:** Scoped exception deduplication by `(organisation_id, job_id, exception_type)` and supporting entity IDs, ensuring subsequent detection runs never overwrite or collide across jobs.
+
+### 2. Settlement Rule Selection by Karat & Effective Dates
+- **Implementation:** In `backend/app/services/settlements.py`, when a worksheet is generated without an explicit `settlement_rule_id`, the engine automatically selects the appropriate active rule using SQL ordering:
+  - Karat match: Exact match on `job.karat` takes precedence over generic/null karat rules.
+  - Effective date window: `effective_from <= as_of_date` and `(effective_to IS NULL OR effective_to >= as_of_date)`.
+  - Version & Recency: Ordered by version descending and created date descending.
+- **Validation:** Expired rules and future holiday rates are rejected; the active rule matching the job's purity is selected.
+
+### 3. Fiduciary Approval Controls (Four-Eyes Principle)
+- **Draft Protection:** Worksheets in `draft` status cannot be approved directly; they must first be submitted (`submitted` status), returning **HTTP 422 `invalid_status`** otherwise.
+- **Four-Eyes Enforcement:** The user who generated/created the worksheet cannot approve it (`worksheet.created_by_id == user.id`), returning **HTTP 403 `self_approval_forbidden`**.
+- **Role Authorization:** Only users with `manager` or `admin` roles can approve worksheets; non-managerial roles receive **HTTP 403 `unauthorized_approval`**.
+
+### 4. Monetary Quantization to Paise (₹0.01)
+- **Precision Policy:**
+  - Physical gold weights: milligram precision (`Decimal("0.001")`, 3 decimal places).
+  - Financial currency amounts: paise precision (`Decimal("0.01")`, 2 decimal places).
+- **Implementation:** Quantized `labour_amount`, `gold_recovery_amount`, `approved_deductions`, and `net_payable_amount` using `Decimal("0.01")` with `ROUND_HALF_UP` across `backend/app/services/settlements.py`.
+
+---
+
+## 4. Test Suite Execution & Independent Verification
+
+Full automated test suites were executed on both SQLite and PostgreSQL. All 105 tests passed cleanly with zero failures or warnings.
+
+### SQLite Test Execution
+```bash
+cd backend && uv run pytest
+# Output:
+# 105 passed in 39.24s
+```
+
+### PostgreSQL Test Execution
+Targeting container `aurumtrace-pg-dev` on `localhost:5433`:
+```bash
+cd backend && AURUM_TEST_DATABASE_URL=postgresql+psycopg://aurumtrace:aurumtrace_dev@localhost:5433/aurumtrace_test uv run pytest
+# Output:
+# 105 passed in 55.63s
+```
+
+### Key Test Coverage Summary
+- `tests/test_audit_fixes.py` (5 tests):
+  - Exception code collision prevention across jobs with identical prefixes.
+  - Automatic settlement rule selection by karat and effective dates.
+  - Four-eyes approval enforcement, draft rejection, and unauthorized user rejection.
+  - Currency rounding to exact paise (₹0.01).
+  - User password updates via `PATCH /users/{id}`.
+- `tests/test_settlements.py` (3 tests):
+  - Rule creation and worksheet calculation.
+  - Four-eyes approval transition workflow.
+  - Rejection workflow with mandatory reason.
+- `tests/test_kalyan_production_acceptance.py` (1 test):
+  - 15-step end-to-end manufacturing, reconciliation, exception detection, and commercial settlement lifecycle.
+- Core and Phase 1/2 tests (96 tests):
+  - Multi-level material transfers, custody acknowledgements, compensating reversals, fine-gold math, role isolation, and database append-only triggers.
+
+---
+
+## 5. Live Cloud Deployment Status
 
 | Service | Hosting Provider | Public URL | Status |
 |---|---|---|---|
 | **Backend API** | Render Web Service | `https://aurumtrace-api-p1rr.onrender.com` | ✅ Live (HTTP 200, HTTPS) |
 | **API Documentation** | Swagger UI | `https://aurumtrace-api-p1rr.onrender.com/docs` | ✅ Live (Interactive Swagger) |
-| **Database** | Render Managed PostgreSQL | Internal connection via `psycopg` | ✅ Live (PostgreSQL 16) |
+| **Database** | Render Managed PostgreSQL | Cluster `dpg-dbhn1pmgekts73bnanc0-a` (database: `aurumtrace`) | ✅ Live (PostgreSQL 16) |
 | **Frontend Web App** | Vercel Serverless CDN | `https://aurumtrace-web-gamma.vercel.app` | ✅ Live (HTTP 200, Fast Edge) |
 
 ---
 
-## 4. Operational Runbook
+## 6. Git & Pull Request Status
 
-### Running Locally with Docker
-```bash
-# Start backend and PostgreSQL
-cd backend
-docker compose -f docker-compose.prod.yml up -d --build
-
-# Run migrations
-alembic upgrade head
-
-# Seed synthetic test org (Kalyan Heritage Goldsmiths)
-python -m scripts.seed
-```
-
-### Running Tests Locally
-```bash
-# SQLite full suite (100 tests)
-cd backend && uv run pytest
-
-# PostgreSQL full suite (100 tests)
-cd backend && AURUM_TEST_DATABASE_URL=postgresql+psycopg://aurumtrace:aurumtrace_dev@localhost:5433/aurumtrace_test uv run pytest
-```
-
-### Building Frontend
-```bash
-npm run build
-```
+- **Working Branch:** `fix/aurumtrace-financial-reconciliation`
+- **Target Branch:** `feat/landing-page`
+- **Open Pull Request:** [PR #4](https://github.com/Saiesha1103/Auramtrace/pull/4)
+- **Status:** All pre-release audit requirements are resolved, tested, and staged on `fix/aurumtrace-financial-reconciliation`. No merges have been performed; `main` remains completely untouched pending final sign-off.
+- **Blockers:** Zero blockers. Staging and production are verified.

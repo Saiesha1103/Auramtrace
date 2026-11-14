@@ -65,7 +65,7 @@ from app.services import (
 from app.services.security import hash_password
 
 ORG_NAME = "Demo Jewellers (synthetic data)"
-DEMO_PASSWORD = "Auram-Demo-2026!"  # synthetic, development only
+DEMO_PASSWORD = os.getenv("AURUM_DEMO_PASSWORD", "Auram-DevSeed-2026-Secure#99")  # development / test seed only
 USERS = [
     ("admin@aurumtrace-demo.example.com", "Demo Admin", UserRole.admin),
     ("manager@aurumtrace-demo.example.com", "Production Manager (demo)", UserRole.manager),

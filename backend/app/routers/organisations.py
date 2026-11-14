@@ -58,6 +58,10 @@ def update_user(user_id: uuid.UUID, body: UserUpdate, user: Admin, db: DB) -> Us
     if target.id == user.id and (changes.get("role", UserRole.admin) != UserRole.admin or changes.get("is_active") is False):
         raise BusinessRuleViolation("You cannot demote or deactivate your own account", code="self_lockout")
     diff = {}
+    if "password" in changes and changes["password"]:
+        new_pw = changes.pop("password")
+        target.password_hash = hash_password(new_pw)
+        diff["password"] = {"from": "***", "to": "***"}
     for k, v in changes.items():
         if v is not None and getattr(target, k) != v:
             diff[k] = {"from": getattr(target, k), "to": v}

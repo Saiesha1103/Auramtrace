@@ -5,7 +5,8 @@ import { PAGES, href, navigate, useRoute, type PageKey } from './router';
 import { useAppState, resetDemo, syncWithBackend } from './data/store';
 import { AS_OF } from './data/seed';
 import { fmtDate } from './data/calc';
-import { subscribeApiState, getApiState, type ApiState } from './data/api';
+import { subscribeApiState, getApiState, logout, checkAuth, type ApiState } from './data/api';
+import { Login } from './pages/Login';
 import { Dashboard } from './pages/Dashboard';
 import { Karigars } from './pages/Karigars';
 import { Jobs } from './pages/Jobs';
@@ -117,7 +118,15 @@ function QuickSearch() {
   );
 }
 
-function Topbar({ onMenu }: { onMenu: () => void }) {
+function Topbar({
+  onMenu,
+  onLogout,
+  onExitDemo,
+}: {
+  onMenu: () => void;
+  onLogout?: () => void;
+  onExitDemo?: () => void;
+}) {
   const { page, id } = useRoute();
   const s = useAppState();
   const [apiState, setApiState] = useState<ApiState>(getApiState());
@@ -183,6 +192,27 @@ function Topbar({ onMenu }: { onMenu: () => void }) {
             {localActions} local change{localActions === 1 ? '' : 's'} · Reset
           </button>
         )}
+        {apiState.authenticated ? (
+          <button
+            className="tb-chip tb-signout"
+            onClick={onLogout}
+            title="Sign out of authoritative backend ledger"
+            style={{ cursor: 'pointer' }}
+          >
+            <Icon name="arrow" size={13} style={{ transform: 'rotate(180deg)' }} />
+            <span>Sign Out</span>
+          </button>
+        ) : (
+          <button
+            className="tb-chip tb-signin"
+            onClick={onExitDemo}
+            title="Sign in to live backend ledger"
+            style={{ cursor: 'pointer', background: 'rgba(226, 179, 92, 0.15)', borderColor: 'rgba(226, 179, 92, 0.4)' }}
+          >
+            <Icon name="check" size={13} />
+            <span>Sign In</span>
+          </button>
+        )}
       </div>
     </header>
   );
@@ -191,8 +221,21 @@ function Topbar({ onMenu }: { onMenu: () => void }) {
 export default function AppShell() {
   const { page, id } = useRoute();
   const [menu, setMenu] = useState(false);
+  const [apiState, setApiState] = useState<ApiState>(getApiState());
+  const [demoMode, setDemoMode] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('aurumtrace_demo_mode') === 'true';
+    }
+    return false;
+  });
+
   const main = useRef<HTMLElement>(null);
   const View = VIEWS[page];
+
+  useEffect(() => {
+    checkAuth();
+    return subscribeApiState(setApiState);
+  }, []);
 
   useEffect(() => {
     const landingTitle = document.title.includes('·') ? 'AURUMTRACE — Precious-Metal Intelligence Platform' : document.title;
@@ -214,12 +257,54 @@ export default function AppShell() {
     main.current?.focus({ preventScroll: true });
   }, [page, id]);
 
+  const handleLogout = () => {
+    logout();
+    setDemoMode(false);
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('aurumtrace_demo_mode');
+    }
+  };
+
+  const handleExitDemo = () => {
+    setDemoMode(false);
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('aurumtrace_demo_mode');
+    }
+  };
+
+  // If not authenticated and user hasn't explicitly chosen offline demo mode, display Login screen
+  if (!apiState.authenticated && !demoMode) {
+    return (
+      <div className="app">
+        <IconDefs />
+        <Login
+          onSuccess={() => {
+            setDemoMode(false);
+            if (typeof window !== 'undefined') {
+              localStorage.removeItem('aurumtrace_demo_mode');
+            }
+          }}
+          onExploreDemo={() => {
+            setDemoMode(true);
+            if (typeof window !== 'undefined') {
+              localStorage.setItem('aurumtrace_demo_mode', 'true');
+            }
+          }}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="app">
       <IconDefs />
       <Sidebar open={menu} onClose={() => setMenu(false)} />
       <div className="app-main">
-        <Topbar onMenu={() => setMenu(true)} />
+        <Topbar
+          onMenu={() => setMenu(true)}
+          onLogout={handleLogout}
+          onExitDemo={handleExitDemo}
+        />
         <main ref={main} className="app-content" tabIndex={-1}>
           <View id={id} />
         </main>

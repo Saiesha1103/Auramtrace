@@ -62,10 +62,16 @@ def detect_exceptions_for_job(db: Session, user: User, job: JobOrder) -> list[Ex
     )
     if latest_run and latest_run.unexplained_variance_fine_g > latest_run.loss_allowance_fine_g:
         diff = latest_run.unexplained_variance_fine_g - latest_run.loss_allowance_fine_g
-        code = f"EX-{job.code[:14]}-V"[:24]
         sev = ExceptionSeverity.critical if diff >= Decimal("0.500") else (ExceptionSeverity.high if diff >= Decimal("0.100") else ExceptionSeverity.medium)
-        existing = db.scalar(select(ExceptionCase).where(ExceptionCase.organisation_id == org, ExceptionCase.code == code))
+        existing = db.scalar(
+            select(ExceptionCase).where(
+                ExceptionCase.organisation_id == org,
+                ExceptionCase.job_id == job.id,
+                ExceptionCase.exception_type == ExceptionType.variance,
+            )
+        )
         if not existing:
+            code = next_code(db, ExceptionCase, org, "EX")
             ex = ExceptionCase(
                 organisation_id=org,
                 code=code,
@@ -83,6 +89,7 @@ def detect_exceptions_for_job(db: Session, user: User, job: JobOrder) -> list[Ex
                 supporting_record_ids=[str(latest_run.id)],
             )
             db.add(ex)
+            db.flush()
             created_cases.append(ex)
         elif existing.status == ExceptionStatus.open:
             existing.severity = sev
@@ -98,13 +105,22 @@ def detect_exceptions_for_job(db: Session, user: User, job: JobOrder) -> list[Ex
     returns = list(
         db.scalars(select(MaterialReturn).where(MaterialReturn.organisation_id == org, MaterialReturn.job_id == job.id))
     )
+    existing_purity_cases = list(
+        db.scalars(
+            select(ExceptionCase).where(
+                ExceptionCase.organisation_id == org,
+                ExceptionCase.job_id == job.id,
+                ExceptionCase.exception_type == ExceptionType.purity_mismatch,
+            )
+        )
+    )
     for r in returns:
         if r.assayed_fineness_ppt is not None and (r.declared_fineness_ppt - r.assayed_fineness_ppt) >= Decimal("20.0"):
             diff_ppt = r.declared_fineness_ppt - r.assayed_fineness_ppt
             deficit_fine = (r.net_metal_weight_g * diff_ppt / Decimal("1000.0")).quantize(Decimal("0.001"))
-            code = f"EX-{job.code[:8]}-P-{r.code[-8:]}"[:24]
-            existing = db.scalar(select(ExceptionCase).where(ExceptionCase.organisation_id == org, ExceptionCase.code == code))
+            existing = next((c for c in existing_purity_cases if str(r.id) in (c.supporting_record_ids or [])), None)
             if not existing:
+                code = next_code(db, ExceptionCase, org, "EX")
                 ex = ExceptionCase(
                     organisation_id=org,
                     code=code,
@@ -122,7 +138,9 @@ def detect_exceptions_for_job(db: Session, user: User, job: JobOrder) -> list[Ex
                     supporting_record_ids=[str(r.id)],
                 )
                 db.add(ex)
+                db.flush()
                 created_cases.append(ex)
+                existing_purity_cases.append(ex)
             elif existing.status == ExceptionStatus.open:
                 existing.description = f"Return {r.code} declared {float(r.declared_fineness_ppt):.1f} ppt but assayed {float(r.assayed_fineness_ppt):.1f} ppt (deficit of {float(deficit_fine):.3f} g fine gold)"
                 existing.observed_value = f"{float(r.assayed_fineness_ppt):.1f} ppt"
@@ -138,14 +156,23 @@ def detect_exceptions_for_job(db: Session, user: User, job: JobOrder) -> list[Ex
             )
         )
     )
+    existing_unack_cases = list(
+        db.scalars(
+            select(ExceptionCase).where(
+                ExceptionCase.organisation_id == org,
+                ExceptionCase.job_id == job.id,
+                ExceptionCase.exception_type.in_([ExceptionType.unacknowledged_issue, ExceptionType.unacknowledged_transfer]),
+            )
+        )
+    )
     fu = followups(db, [e.id for e in events])
     threshold = now - timedelta(days=2)
     for e in events:
         if fu[e.id].reversal_id is None and (fu[e.id].acknowledgement_id is None or fu[e.id].acknowledgement_reversed):
             # Check if pending or overdue
-            code = f"EX-{job.code[:8]}-U-{str(e.id)[:8]}"[:24]
-            existing = db.scalar(select(ExceptionCase).where(ExceptionCase.organisation_id == org, ExceptionCase.code == code))
+            existing = next((c for c in existing_unack_cases if str(e.id) in (c.supporting_event_ids or [])), None)
             if not existing:
+                code = next_code(db, ExceptionCase, org, "EX")
                 rec = e.recorded_at if e.recorded_at.tzinfo is not None else e.recorded_at.replace(tzinfo=UTC)
                 is_old = rec <= threshold
                 ex_type = ExceptionType.unacknowledged_issue if e.event_type == MaterialEventType.issue else ExceptionType.unacknowledged_transfer
@@ -166,13 +193,21 @@ def detect_exceptions_for_job(db: Session, user: User, job: JobOrder) -> list[Ex
                     supporting_record_ids=[],
                 )
                 db.add(ex)
+                db.flush()
                 created_cases.append(ex)
+                existing_unack_cases.append(ex)
 
     # 4. Overdue job with outstanding WIP
     if job.due_date < now.date() and job.status in (JobStatus.draft, JobStatus.issued, JobStatus.in_production):
-        code = f"EX-{job.code[:14]}-DUE"[:24]
-        existing = db.scalar(select(ExceptionCase).where(ExceptionCase.organisation_id == org, ExceptionCase.code == code))
+        existing = db.scalar(
+            select(ExceptionCase).where(
+                ExceptionCase.organisation_id == org,
+                ExceptionCase.job_id == job.id,
+                ExceptionCase.exception_type == ExceptionType.overdue_job,
+            )
+        )
         if not existing:
+            code = next_code(db, ExceptionCase, org, "EX")
             holdings = job_holdings(db, job.id)
             total_held = sum((h.fine for h in holdings.values()), Decimal("0.000"))
             ex = ExceptionCase(
@@ -192,6 +227,7 @@ def detect_exceptions_for_job(db: Session, user: User, job: JobOrder) -> list[Ex
                 supporting_record_ids=[str(job.id)],
             )
             db.add(ex)
+            db.flush()
             created_cases.append(ex)
 
     db.flush()

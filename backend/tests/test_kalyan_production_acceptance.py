@@ -248,8 +248,21 @@ def test_kalyan_production_lifecycle_acceptance(client, admin):
         "effectiveFrom": "2026-01-01",
     }).json()
 
-    # Generate settlement worksheet for Rajesh:
-    sheet = client.post("/api/v1/settlements/worksheets", headers=h, json={
+    # Create Accounts Manager for separation of duties (four-eyes principle)
+    mgr_user = client.post("/api/v1/users", headers=h, json={
+        "email": "kalyan_manager@example.com",
+        "fullName": "Kalyan Accounts Manager",
+        "role": "manager",
+        "password": "Password-123456!",
+    }).json()
+    mgr_token = client.post("/api/v1/auth/login", json={
+        "email": "kalyan_manager@example.com",
+        "password": "Password-123456!",
+    }).json()["accessToken"]
+    mgr_h = {"Authorization": f"Bearer {mgr_token}", "Content-Type": "application/json"}
+
+    # Generate settlement worksheet for Rajesh created by Manager:
+    sheet = client.post("/api/v1/settlements/worksheets", headers=mgr_h, json={
         "jobId": job["id"],
         "karigarId": rajesh["id"],
         "settlementRuleId": rule["id"],
@@ -280,11 +293,21 @@ def test_kalyan_production_lifecycle_acceptance(client, admin):
     assert sheet["status"] == "draft"
 
     # 15. Worksheet Submission and Approval Lifecycle:
-    # Submit worksheet
-    sub = client.post(f"/api/v1/settlements/worksheets/{sheet['id']}/submit", headers=h).json()
+    # Direct approval of draft worksheet must fail (cannot jump draft -> approved)
+    fail_draft = client.post(f"/api/v1/settlements/worksheets/{sheet['id']}/approve", headers=h, json={})
+    assert fail_draft.status_code == 422
+    assert fail_draft.json()["error"]["code"] == "invalid_status"
+
+    # Manager submits worksheet
+    sub = client.post(f"/api/v1/settlements/worksheets/{sheet['id']}/submit", headers=mgr_h).json()
     assert sub["status"] == "submitted"
 
-    # Approve worksheet (requires Admin/Manager)
+    # Self-approval by creator (Manager) must fail with 403 (four-eyes principle)
+    fail_self = client.post(f"/api/v1/settlements/worksheets/{sheet['id']}/approve", headers=mgr_h, json={})
+    assert fail_self.status_code == 403
+    assert fail_self.json()["error"]["code"] == "self_approval_forbidden"
+
+    # Admin approves worksheet (authorized secondary approver)
     app = client.post(f"/api/v1/settlements/worksheets/{sheet['id']}/approve", headers=h, json={
         "notes": "Approved by Chief Goldsmith Accountant after reviewing fire assay report.",
     }).json()

@@ -132,28 +132,71 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 
 /* ------------------------------------------------------------------ Auth Methods */
 
-export async function login(email: string, password: string): Promise<boolean> {
+export async function login(email: string, password: string): Promise<{ ok: boolean; error?: string }> {
   try {
-    const data = await request<{ accessToken: string; user: any }>('/auth/login', {
+    const data = await request<{ accessToken: string; user?: any }>('/auth/login', {
       method: 'POST',
       body: JSON.stringify({ email, password }),
     });
     setAuthToken(data.accessToken);
+
+    let user = data.user;
+    if (!user) {
+      try {
+        user = await request<any>('/auth/me');
+      } catch {
+        // fallback
+      }
+    }
+
     updateApiState({
       authenticated: true,
-      user: data.user,
+      user: user || null,
+      status: 'connected',
+      error: undefined,
+    });
+    return { ok: true };
+  } catch (err: any) {
+    const msg = err.message || 'Incorrect email or password.';
+    updateApiState({ error: msg, authenticated: false, status: 'error' });
+    return { ok: false, error: msg };
+  }
+}
+
+export function logout(): void {
+  setAuthToken(null);
+  updateApiState({
+    authenticated: false,
+    user: null,
+    status: 'offline_fallback',
+    error: undefined,
+  });
+}
+
+export async function checkAuth(): Promise<boolean> {
+  const token = getAuthToken();
+  if (!token) {
+    updateApiState({ authenticated: false, status: 'offline_fallback' });
+    return false;
+  }
+  try {
+    const user = await request<any>('/auth/me');
+    updateApiState({
+      authenticated: true,
+      user,
       status: 'connected',
       error: undefined,
     });
     return true;
-  } catch (err: any) {
-    updateApiState({ error: err.message });
+  } catch {
+    setAuthToken(null);
+    updateApiState({
+      authenticated: false,
+      user: null,
+      status: 'offline_fallback',
+    });
     return false;
   }
-}
-
-export async function loginDefaultAdmin(): Promise<boolean> {
-  return login('admin@aurumtrace-demo.example.com', 'Auram-Demo-2026!');
 }
 
 /* ------------------------------------------------------------------ Model Mappings */
@@ -188,12 +231,10 @@ export interface BackendDataBundle {
 }
 
 export async function fetchBackendAppState(): Promise<BackendDataBundle> {
-  // If not logged in, attempt auto-login with default seeded admin credentials
+  // If not logged in, do not attempt auto-login with hardcoded admin
   if (!getAuthToken()) {
-    const ok = await loginDefaultAdmin();
-    if (!ok) {
-      throw new Error('Could not authenticate to backend.');
-    }
+    updateApiState({ authenticated: false, status: 'offline_fallback' });
+    throw new Error('Not authenticated to backend.');
   }
 
   // Parallel fetch of all primary endpoints

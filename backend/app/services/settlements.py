@@ -9,12 +9,12 @@ Enforces:
 """
 
 import uuid
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 
-from sqlalchemy import select
+from sqlalchemy import case, select
 from sqlalchemy.orm import Session
 
-from ..errors import BusinessRuleViolation, Conflict, NotFound
+from ..errors import BusinessRuleViolation, Conflict, Forbidden, NotFound
 from ..models import (
     JobOrder,
     JobStatus,
@@ -40,6 +40,8 @@ from . import audit
 from .codes import ensure_unique_code, next_code
 from .custody import get_in_org
 from .fine_gold import GRAM, ZERO
+
+CURRENCY = Decimal("0.01")
 
 
 def create_settlement_rule(db: Session, user: User, req: SettlementRuleCreate) -> SettlementRule:
@@ -97,20 +99,32 @@ def generate_settlement_worksheet(db: Session, user: User, req: SettlementWorksh
         raise BusinessRuleViolation("A responsible karigar must be assigned to the job or specified in worksheet", code="karigar_required")
     karigar = get_in_org(db, Karigar, org, karigar_id, "Karigar")
 
-    # Settlement rule lookup: explicit or active default
+    # Settlement rule lookup: explicit or active matching job karat & effective date
     rule = None
     if req.settlement_rule_id:
         rule = get_in_org(db, SettlementRule, org, req.settlement_rule_id, "Settlement rule")
     else:
+        as_of_date = job.created_at.date() if job.created_at else utcnow().date()
         rule = db.scalar(
             select(SettlementRule)
-            .where(SettlementRule.organisation_id == org, SettlementRule.is_active == True)
-            .order_by(SettlementRule.created_at.desc())
+            .where(
+                SettlementRule.organisation_id == org,
+                SettlementRule.is_active == True,
+                (SettlementRule.karat == job.karat) | (SettlementRule.karat.is_(None)),
+                SettlementRule.effective_from <= as_of_date,
+                (SettlementRule.effective_to.is_(None)) | (SettlementRule.effective_to >= as_of_date),
+            )
+            .order_by(
+                case((SettlementRule.karat == job.karat, 1), else_=0).desc(),
+                SettlementRule.effective_from.desc(),
+                SettlementRule.version.desc(),
+                SettlementRule.created_at.desc(),
+            )
         )
 
     # Rates: from rule if found, else reasonable defaults (₹450/g labour, ₹7850/g gold rate)
-    labour_rate = rule.labour_rate_per_g if rule else Decimal("450.000")
-    gold_rate = rule.gold_rate_per_fine_g if rule else Decimal("7850.000")
+    labour_rate = rule.labour_rate_per_g if rule else Decimal("450.00")
+    gold_rate = rule.gold_rate_per_fine_g if rule else Decimal("7850.00")
 
     # Finished jewellery calculation
     finished_returns = list(
@@ -125,7 +139,7 @@ def generate_settlement_worksheet(db: Session, user: User, req: SettlementWorksh
     finished_gross = sum((r.gross_weight_g for r in finished_returns), ZERO).quantize(GRAM)
     finished_fine = sum((r.fine_gold_g for r in finished_returns), ZERO).quantize(GRAM)
 
-    labour_amount = (finished_gross * labour_rate).quantize(GRAM)
+    labour_amount = (finished_gross * labour_rate).quantize(CURRENCY, rounding=ROUND_HALF_UP)
 
     # Wastage and excess loss recovery calculation:
     # If a commercial settlement rule is attached, its contractual loss allowance percentage governs the commercial settlement.
@@ -138,10 +152,10 @@ def generate_settlement_worksheet(db: Session, user: User, req: SettlementWorksh
     actual_loss_fine = recon.unexplained_variance_fine_g
 
     excess_loss_fine = max(ZERO, (actual_loss_fine - wastage_allowance_fine)).quantize(GRAM)
-    gold_recovery_amount = (excess_loss_fine * gold_rate).quantize(GRAM)
+    gold_recovery_amount = (excess_loss_fine * gold_rate).quantize(CURRENCY, rounding=ROUND_HALF_UP)
 
-    approved_deductions = req.approved_deductions or ZERO
-    net_payable = (labour_amount - gold_recovery_amount - approved_deductions).quantize(GRAM)
+    approved_deductions = (req.approved_deductions or ZERO).quantize(CURRENCY, rounding=ROUND_HALF_UP)
+    net_payable = (labour_amount - gold_recovery_amount - approved_deductions).quantize(CURRENCY, rounding=ROUND_HALF_UP)
 
     code = next_code(db, SettlementWorksheet, org, "SW")
     worksheet = SettlementWorksheet(
@@ -210,9 +224,13 @@ def submit_settlement_worksheet(db: Session, user: User, worksheet: SettlementWo
 def approve_settlement_worksheet(db: Session, user: User, worksheet: SettlementWorksheet, req: SettlementApproveRequest) -> SettlementWorksheet:
     # Authorization check: only admin or manager can approve
     if user.role not in (UserRole.admin, UserRole.manager):
-        raise BusinessRuleViolation("Only an authorized Admin or Manager can approve commercial settlements", code="unauthorized_approval")
-    if worksheet.status not in (SettlementStatus.draft, SettlementStatus.submitted):
-        raise BusinessRuleViolation(f"Worksheet in status '{worksheet.status.value}' cannot be approved", code="invalid_status")
+        raise Forbidden("Only an authorized Admin or Manager can approve commercial settlements", code="unauthorized_approval")
+    # Separation of duties (four-eyes principle): creator cannot approve their own worksheet
+    if worksheet.created_by_id == user.id:
+        raise Forbidden("The creator of a settlement worksheet cannot approve their own worksheet", code="self_approval_forbidden")
+    # Status check: must be submitted (prevent direct draft-to-approved transition)
+    if worksheet.status != SettlementStatus.submitted:
+        raise BusinessRuleViolation(f"Worksheet in status '{worksheet.status.value}' cannot be approved; it must be submitted first", code="invalid_status")
 
     worksheet.status = SettlementStatus.approved
     worksheet.approved_by_id = user.id
@@ -239,7 +257,7 @@ def approve_settlement_worksheet(db: Session, user: User, worksheet: SettlementW
 
 def reject_settlement_worksheet(db: Session, user: User, worksheet: SettlementWorksheet, req: SettlementRejectRequest) -> SettlementWorksheet:
     if user.role not in (UserRole.admin, UserRole.manager):
-        raise BusinessRuleViolation("Only an Admin or Manager can reject settlements", code="unauthorized_rejection")
+        raise Forbidden("Only an Admin or Manager can reject settlements", code="unauthorized_rejection")
     if worksheet.status not in (SettlementStatus.draft, SettlementStatus.submitted):
         raise BusinessRuleViolation(f"Worksheet in status '{worksheet.status.value}' cannot be rejected", code="invalid_status")
 

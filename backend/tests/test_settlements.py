@@ -87,11 +87,12 @@ def settle_world(client, admin):
 
 def test_settlement_worksheet_calculation_and_approval(client, settle_world, make_user):
     w = settle_world
-    h = w["h"]
+    admin_h = w["h"]
+    manager = make_user("manager", "settle_mgr@example.com")
     viewer = make_user("viewer", "viewer@example.com")
 
-    # 1. Generate worksheet
-    r = client.post("/api/v1/settlements/worksheets", headers=h, json={
+    # 1. Generate worksheet as manager
+    r = client.post("/api/v1/settlements/worksheets", headers=manager["h"], json={
         "jobId": w["job"]["id"],
         "karigarId": w["head"]["id"],
         "settlementRuleId": w["rule"]["id"],
@@ -113,17 +114,28 @@ def test_settlement_worksheet_calculation_and_approval(client, settle_world, mak
     # Net payable: 17,500 - 2,745 - 250 = ₹14,505
     assert sheet["netPayableAmount"] == 14505.0
 
-    # 2. Submit worksheet
-    sub_r = client.post(f"/api/v1/settlements/worksheets/{sheet['id']}/submit", headers=h)
+    # 2. Direct approval of draft worksheet must fail (cannot jump draft -> approved)
+    fail_draft_app = client.post(f"/api/v1/settlements/worksheets/{sheet['id']}/approve", headers=admin_h, json={})
+    assert fail_draft_app.status_code == 422
+    assert fail_draft_app.json()["error"]["code"] == "invalid_status"
+
+    # 3. Submit worksheet
+    sub_r = client.post(f"/api/v1/settlements/worksheets/{sheet['id']}/submit", headers=manager["h"])
     assert sub_r.status_code == 200
     assert sub_r.json()["status"] == "submitted"
 
-    # 3. Viewer cannot approve worksheet (RBAC guard)
-    fail_app = client.post(f"/api/v1/settlements/worksheets/{sheet['id']}/approve", headers=viewer["h"], json={})
-    assert fail_app.status_code == 403
+    # 4. Creator cannot approve their own worksheet (four-eyes principle)
+    fail_self = client.post(f"/api/v1/settlements/worksheets/{sheet['id']}/approve", headers=manager["h"], json={})
+    assert fail_self.status_code == 403
+    assert fail_self.json()["error"]["code"] == "self_approval_forbidden"
 
-    # 4. Manager approves worksheet
-    ok_app = client.post(f"/api/v1/settlements/worksheets/{sheet['id']}/approve", headers=h, json={
+    # 5. Viewer cannot approve worksheet (unauthorized role -> 403)
+    fail_viewer = client.post(f"/api/v1/settlements/worksheets/{sheet['id']}/approve", headers=viewer["h"], json={})
+    assert fail_viewer.status_code == 403
+    assert fail_viewer.json()["error"]["code"] == "forbidden"
+
+    # 6. Admin approves worksheet
+    ok_app = client.post(f"/api/v1/settlements/worksheets/{sheet['id']}/approve", headers=admin_h, json={
         "notes": "Approved for accounts payout batch #41",
     })
     assert ok_app.status_code == 200
@@ -132,7 +144,7 @@ def test_settlement_worksheet_calculation_and_approval(client, settle_world, mak
     assert approved["approvedAt"] is not None
 
     # Job status updated to settled
-    job = client.get(f"/api/v1/jobs/{w['job']['id']}", headers=h).json()
+    job = client.get(f"/api/v1/jobs/{w['job']['id']}", headers=admin_h).json()
     assert job["status"] == "settled"
 
 
