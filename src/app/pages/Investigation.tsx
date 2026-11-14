@@ -144,7 +144,7 @@ function Case({ ex }: { ex: ExceptionItem }) {
   const askAi = async () => {
     setBusy(true);
     const res = await requestAiExplanation(ex.id);
-    setAi({ ok: res.ok, text: res.error });
+    setAi({ ok: res.ok, text: res.ok ? (res.text || 'Investigation completed.') : (res.error || 'Failed to generate explanation.') });
     setBusy(false);
   };
   const setReview = (st: 'Open' | 'Under review' | 'Resolved') => {

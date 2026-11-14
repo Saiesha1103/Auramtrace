@@ -1,0 +1,53 @@
+services:
+  db:
+    image: postgres:17-alpine
+    container_name: aurumtrace-pg-prod
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-aurumtrace}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Database password must be set}
+      POSTGRES_DB: ${POSTGRES_DB:-aurumtrace_prod}
+    volumes:
+      - aurumtrace_prod_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-aurumtrace}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2048M
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: aurumtrace-api-prod
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      AURUM_ENV: production
+      AURUM_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-aurumtrace}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-aurumtrace_prod}
+      AURUM_JWT_SECRET: ${AURUM_JWT_SECRET:?JWT secret must be set}
+      AURUM_ALLOW_REGISTRATION: "false"
+      AURUM_CORS_ORIGINS: ${AURUM_CORS_ORIGINS:-https://aurumtrace.example.com}
+      AURUM_SQL_ECHO: "false"
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 1024M
+
+volumes:
+  aurumtrace_prod_pg:

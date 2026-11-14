@@ -16,11 +16,20 @@ class Settings(BaseSettings):
     jwt_secret: str = DEV_JWT_SECRET
     jwt_algorithm: str = "HS256"
     access_token_minutes: int = 60
-    # comma-separated in env, e.g. AURUM_CORS_ORIGINS=http://localhost:5173,https://app.example.com
-    cors_origins: list[str] = ["http://localhost:5173", "http://127.0.0.1:5173"]
+    # comma-separated in env, e.g. AURUM_CORS_ORIGINS=https://aurumtrace-web-gamma.vercel.app,http://localhost:5173
+    cors_origins: list[str] = [
+        "https://aurumtrace-web-gamma.vercel.app",
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    ]
     # open self-service sign-up (organisation + first admin). Disable outside development.
     allow_registration: bool = True
     sql_echo: bool = False
+
+    # AI Investigation Assistant settings
+    ai_provider: str = "deterministic"  # "deterministic" | "gemini"
+    gemini_api_key: str | None = None
+    gemini_model: str = "gemini-2.5-flash"
 
     @field_validator("cors_origins", mode="before")
     @classmethod
@@ -36,6 +45,8 @@ class Settings(BaseSettings):
                 raise ValueError("AURUM_JWT_SECRET must be set to a strong secret (32+ chars) in production")
             if self.allow_registration:
                 raise ValueError("AURUM_ALLOW_REGISTRATION must be false in production")
+            if any("*" in origin for origin in self.cors_origins):
+                raise ValueError("Wildcard CORS origins are forbidden in production")
         return self
 
 

@@ -55,6 +55,7 @@ class UserUpdate(CamelModel):
     full_name: str | None = Field(default=None, min_length=2, max_length=160)
     role: UserRole | None = None
     is_active: bool | None = None
+    password: str | None = Field(default=None, min_length=10, max_length=128)
 
 
 class OrganisationOut(CamelModel):

@@ -9,6 +9,7 @@ Floats are never used for accounting.
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 
 GRAM = Decimal("0.001")
+ZERO = Decimal("0.000")
 MAX_FINENESS_PPT = Decimal("999.9")
 
 
