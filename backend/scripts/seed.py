@@ -18,6 +18,7 @@ from sqlalchemy import select
 from app import models  # noqa: F401
 from app.database import get_sessionmaker
 from app.models import (
+    AgentRun,
     ExceptionCase,
     ExceptionStatus,
     ExceptionType,
@@ -127,15 +128,43 @@ def at(d: date, hour: int = 10) -> datetime:
     return datetime(d.year, d.month, d.day, hour, 0, tzinfo=UTC)
 
 
+def top_up_existing(db, org: Organisation) -> int:
+    """Bring an ALREADY-seeded demo organisation up to date with the agents / karigar-portal release.
+    Safe to run repeatedly: only adds what is missing and never touches custody history."""
+    added: list[str] = []
+    kar = {k.code: k for k in db.scalars(select(Karigar).where(Karigar.organisation_id == org.id))}
+    for email, name, kcode in KARIGAR_LOGINS:
+        k = kar.get(kcode)
+        if k and not db.scalar(select(User).where(User.email == email)) and not db.scalar(select(User).where(User.karigar_id == k.id)):
+            db.add(User(organisation_id=org.id, email=email, full_name=name, role=UserRole.karigar, karigar_id=k.id, password_hash=hash_password(DEMO_PASSWORD)))
+            added.append(f"karigar login {email}")
+    for code, (when, label) in OCCASIONS.items():
+        j = db.scalar(select(JobOrder).where(JobOrder.organisation_id == org.id, JobOrder.code == code))
+        if j and j.occasion_date is None:
+            j.occasion_date, j.occasion_label = when, label
+            added.append(f"occasion date on {code}")
+    db.flush()
+    if not db.scalar(select(AgentRun).where(AgentRun.organisation_id == org.id)):
+        manager = db.scalar(select(User).where(User.organisation_id == org.id, User.role == UserRole.manager))
+        if manager:
+            watcher_agent.run_watcher(db, manager, horizon_days=7)
+            added.append("first watcher agent run")
+    db.commit()
+    if added:
+        print(f"'{ORG_NAME}' was already seeded; topped up: " + ", ".join(added))
+    else:
+        print(f"'{ORG_NAME}' already fully seeded (incl. agents & karigar portal) - nothing to do.")
+    return 0
+
+
 def main() -> int:
     db = get_sessionmaker()()
     existing_org = db.scalar(select(Organisation).where(Organisation.name == ORG_NAME))
     if existing_org:
-        # Check if Phase 2 is already seeded
+        # Already seeded: only add what newer releases need (karigar logins, occasion dates, agent run)
         has_phase2 = db.scalar(select(ReconciliationRun).where(ReconciliationRun.organisation_id == existing_org.id))
         if has_phase2:
-            print(f"'{ORG_NAME}' already fully seeded (Phase 1 + Phase 2) - nothing to do.")
-            return 0
+            return top_up_existing(db, existing_org)
         org = existing_org
     else:
         org = Organisation(name=ORG_NAME)

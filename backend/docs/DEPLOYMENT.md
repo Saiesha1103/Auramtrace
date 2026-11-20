@@ -26,6 +26,9 @@ All backend configuration variables are prefixed with `AURUM_`:
 | `AURUM_ALLOW_REGISTRATION` | **Yes** | Disables public self-service organisation registration. Startup will abort if set to true in production. | `false` |
 | `AURUM_CORS_ORIGINS` | **Yes** | Comma-delimited list of exact allowed browser origins for CORS. | `https://aurumtrace.yourcompany.com` |
 | `AURUM_ACCESS_TOKEN_MINUTES` | No | Token expiration duration in minutes (default: 60). | `60` |
+| `AURUM_AI_PROVIDER` | No (recommended for demos) | `gemini` makes the agents plan with Gemini function calling; `deterministic` (default) uses the rule-based planner. Gemini failures fall back automatically. | `gemini` |
+| `AURUM_GEMINI_API_KEY` | Only with `gemini` | Google AI Studio API key. Store as a secret; sent in a request header, never in URLs or logs. | — |
+| `AURUM_GEMINI_MODEL` | No | Gemini model id (default `gemini-2.5-flash`). | `gemini-2.5-flash` |
 | `AURUM_SQL_ECHO` | No | Log raw SQL statements. Must remain `false` in production to prevent leaking sensitive ledger data. | `false` |
 
 ---
