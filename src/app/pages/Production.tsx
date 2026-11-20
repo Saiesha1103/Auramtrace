@@ -5,7 +5,7 @@ import { fmtDate, g3, r3 } from '../data/calc';
 import { STAGES, type ProductionEntry, type Stage } from '../data/types';
 import { useLookups } from '../lookups';
 import { Link, useRoute } from '../router';
-import { Btn, Card, DataTable, DemoNote, Dialog, Field, FormGrid, FormMessage, Kpi, PageHeader, Pill, SelectFilter, Tabs, Toolbar, statusTone } from '../ui';
+import { Btn, Card, DataTable, DemoNote, Dialog, Field, FormGrid, FormMessage, Kpi, PageHeader, Pill, Prov, ProvFields, SelectFilter, Tabs, Toolbar, statusTone } from '../ui';
 
 const lossOf = (p: ProductionEntry) => (p.status === 'Done' && p.stage !== 'Alloying' ? r3(p.inGross - p.outGross) : null);
 
@@ -94,6 +94,7 @@ export function Production() {
               { key: 'job', header: 'Job', sort: (r) => r.jobId, render: (r) => <Link to="jobs" id={r.jobId} className="link mono">{r.jobId}</Link> },
               { key: 'stage', header: 'Stage', sort: (r) => STAGES.indexOf(r.stage), render: (r) => r.stage },
               { key: 'by', header: 'By', hideSm: true, render: (r) => partyName(r.partyId) },
+              { key: 'prov', header: 'Weighed on', hideSm: true, render: (r) => <Prov m={r.measurement} /> },
               { key: 'in', header: 'In (g)', align: 'right', render: (r) => <span className="mono">{r.inGross.toFixed(3)}</span> },
               { key: 'out', header: 'Out (g)', align: 'right', render: (r) => <span className="mono">{r.status === 'Done' ? r.outGross.toFixed(3) : '—'}</span> },
               { key: 'loss', header: 'Loss (g)', align: 'right', sort: (r) => lossOf(r) ?? -1, render: (r) => { const l = lossOf(r); return <span className="mono">{l === null ? (r.stage === 'Alloying' && r.status === 'Done' ? `+${r3(r.outGross - r.inGross).toFixed(3)} alloy` : '—') : l.toFixed(3)}</span>; } },
@@ -129,12 +130,14 @@ export function Production() {
 function StageDialog({ open, onClose, initialJob }: { open: boolean; onClose: () => void; initialJob: string }) {
   const s = useAppState();
   const workers = s.parties.filter((p) => p.id !== VAULT && p.role !== 'Manufacturer');
-  const [f, setF] = useState({ jobId: initialJob, stage: 'Casting' as Stage, partyId: workers[0]?.id ?? '', inGross: '', outGross: '', pieces: '0', status: 'Done' as 'Done' | 'In progress', note: '' });
+  const [f, setF] = useState({ jobId: initialJob, stage: 'Casting' as Stage, partyId: workers[0]?.id ?? '', inGross: '', outGross: '', pieces: '0', status: 'Done' as 'Done' | 'In progress', note: '', scaleId: '', operator: '' });
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const inG = Number(f.inGross) || 0;
   const outG = Number(f.outGross) || 0;
   const submit = () => {
-    const res = addProduction({ ...f, date: AS_OF, inGross: inG, outGross: f.status === "Done" ? outG : 0, pieces: Number(f.pieces) || 0 });
+    const operator = f.operator.trim() || workers.find((w) => w.id === f.partyId)?.name || '';
+    if (!f.scaleId.trim()) return setMsg({ ok: false, text: 'Record the scale ID used for these weighings.' });
+    const res = addProduction({ jobId: f.jobId, stage: f.stage, partyId: f.partyId, status: f.status, note: f.note, date: AS_OF, inGross: inG, outGross: f.status === 'Done' ? outG : 0, pieces: Number(f.pieces) || 0, measurement: { scaleId: f.scaleId.trim(), operator, method: 'Manual entry' } });
     setMsg(res.ok ? { ok: true, text: `Logged ${res.id} in this browser session only — not saved to any server.` } : { ok: false, text: res.error });
   };
   const close = () => {
@@ -194,6 +197,7 @@ function StageDialog({ open, onClose, initialJob }: { open: boolean; onClose: ()
         <Field label="Date">
           <input type="date" value={AS_OF} readOnly />
         </Field>
+        <ProvFields scaleId={f.scaleId} operator={f.operator} onChange={(k, v) => setF({ ...f, [k]: v })} />
       </FormGrid>
       {f.status === 'Done' && inG > 0 && (
         <p className="calc-preview">

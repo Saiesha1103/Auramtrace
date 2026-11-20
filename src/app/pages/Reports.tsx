@@ -31,6 +31,7 @@ function Movement() {
   const s = useAppState();
   const { partyName } = useLookups();
   const all = useMemo(() => ledger(s), [s]);
+  const challan = useMemo(() => new Map<string, string | undefined>([...s.lots, ...s.transfers].map((x) => [x.id, x.challanRef])), [s.lots, s.transfers]);
   const [kind, setKind] = useState('All');
   const [party, setParty] = useState('All');
   const [from, setFrom] = useState('2026-10-01');
@@ -39,10 +40,12 @@ function Movement() {
   const exp = () =>
     downloadCsv(
       `aurumtrace-movement-${from}-to-${to}.csv`,
-      ['Date', 'Ref', 'Kind', 'Job', 'From', 'To', 'Gross g', 'Fineness', 'Fine g', 'Detail', 'Data source'],
-      rows.map((e) => [e.date, e.id, e.kind, e.jobId, partyName(e.from), partyName(e.to), e.gross.toFixed(3), e.fineness, e.fine.toFixed(3), e.detail, 'synthetic demo']),
+      ['Date', 'Ref', 'Kind', 'Job', 'From', 'To', 'Challan ref', 'Gross g', 'Fineness (ppt)', 'Fine g', 'Detail', 'Data source'],
+      rows.map((e) => [e.date, e.id, e.kind, e.jobId, partyName(e.from), partyName(e.to), challan.get(e.id) ?? '', e.gross.toFixed(3), Math.round(e.fineness * 1000), e.fine.toFixed(3), e.detail, 'synthetic demo']),
     );
   return (
+    <div className="stack">
+    <DemoNote>Challan references support job-work record keeping. This export is not a GST / ITC-04 filing and is no substitute for a CA or tax adviser.</DemoNote>
     <Card pad={false}>
       <div style={{ padding: '16px 20px 0' }}>
         <Toolbar>
@@ -68,12 +71,14 @@ function Movement() {
           { key: 'kind', header: 'Kind', sort: (r) => r.kind, render: (r) => r.kind },
           { key: 'job', header: 'Job', render: (r) => <Link to="jobs" id={r.jobId} className="link mono">{r.jobId}</Link> },
           { key: 'route', header: 'From → To', hideSm: true, render: (r) => `${partyName(r.from)} → ${partyName(r.to)}` },
+          { key: 'challan', header: 'Challan', hideSm: true, render: (r) => <span className="mono">{challan.get(r.id) ?? '—'}</span> },
           { key: 'gross', header: 'Gross', align: 'right', render: (r) => <span className="mono">{g3(r.gross)}</span> },
           { key: 'pur', header: 'Purity', align: 'right', hideSm: true, render: (r) => <span className="mono">{pct(r.fineness)}</span> },
           { key: 'fine', header: 'Fine', align: 'right', sort: (r) => r.fine, render: (r) => <span className="mono gold">{g3(r.fine)}</span> },
         ]}
       />
     </Card>
+    </div>
   );
 }
 

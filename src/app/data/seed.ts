@@ -1,4 +1,4 @@
-import type { AuditEntry, EvidenceDoc, Job, Lot, Party, ProductionEntry, ReturnEntry, SettlementStatus, Transfer } from './types';
+import type { AuditEntry, EvidenceDoc, Job, Lot, Measurement, Party, ProductionEntry, ReturnEntry, SettlementStatus, Transfer } from './types';
 
 /**
  * SYNTHETIC DEMO DATA — no AURUMTRACE API is available in this repository.
@@ -34,7 +34,7 @@ export const JOBS: Job[] = [
   { id: 'J-1194', title: 'Nose pins', orderRef: 'SO-4449', karat: '18K', fineness: 0.75, pieces: 40, targetGrossPerPiece: 0.4, headKarigarId: 'K-02', lossAllowancePct: 1.0, createdAt: '2026-11-11', deadline: '2026-12-05', notes: 'Awaiting stone allocation before issue.' },
 ];
 
-export const LOTS: Lot[] = [
+const RAW_LOTS: Lot[] = [
   { id: 'L-3279', jobId: 'J-1160', issuedTo: 'K-01', gross: 40.201, fineness: 0.995, date: '2026-10-21', source: 'Bar 995 · B-778', acknowledged: true, ackAt: '2026-10-21' },
   { id: 'L-3288', jobId: 'J-1175', issuedTo: 'K-01', gross: 20.101, fineness: 0.995, date: '2026-10-25', source: 'Bar 995 · B-781', acknowledged: true, ackAt: '2026-10-25' },
   { id: 'L-3295', jobId: 'J-1168', issuedTo: 'K-01', gross: 50.251, fineness: 0.995, date: '2026-11-04', source: 'Bar 995 · B-790', acknowledged: true, ackAt: '2026-11-04' },
@@ -44,7 +44,7 @@ export const LOTS: Lot[] = [
   { id: 'L-3312', jobId: 'J-1191', issuedTo: 'K-02', gross: 30.151, fineness: 0.995, date: '2026-11-10', source: 'Bar 995 · B-798', acknowledged: true, ackAt: '2026-11-10' },
 ];
 
-export const TRANSFERS: Transfer[] = [
+const RAW_TRANSFERS: Omit<Transfer, 'acknowledged'>[] = [
   { id: 'T-5090', jobId: 'J-1160', from: 'K-01', to: 'K-03', gross: 40.201, fineness: 0.995, date: '2026-10-22', kind: 'Full', purpose: 'Full job to karigar' },
   { id: 'T-5096', jobId: 'J-1175', from: 'K-01', to: 'K-05', gross: 20.101, fineness: 0.995, date: '2026-10-26', kind: 'Full', purpose: 'Full job to karigar' },
   { id: 'T-5101', jobId: 'J-1182', from: 'K-02', to: 'K-07', gross: 30.151, fineness: 0.995, date: '2026-11-02', kind: 'Full', purpose: 'Full job to karigar' },
@@ -55,7 +55,7 @@ export const TRANSFERS: Transfer[] = [
   { id: 'T-5112', jobId: 'J-1191', from: 'K-02', to: 'S-03', gross: 15.075, fineness: 0.995, date: '2026-11-10', kind: 'Split', purpose: 'Half batch to die-striking' },
 ];
 
-export const PRODUCTION: ProductionEntry[] = [
+const RAW_PRODUCTION: ProductionEntry[] = [
   { id: 'P-901', jobId: 'J-1160', stage: 'Alloying', partyId: 'K-03', date: '2026-10-22', inGross: 40.201, outGross: 43.620, pieces: 0, status: 'Done' },
   { id: 'P-902', jobId: 'J-1160', stage: 'Casting', partyId: 'K-03', date: '2026-10-24', inGross: 43.620, outGross: 43.310, pieces: 24, status: 'Done' },
   { id: 'P-903', jobId: 'J-1160', stage: 'Polishing', partyId: 'K-03', date: '2026-10-29', inGross: 43.310, outGross: 42.900, pieces: 24, status: 'Done' },
@@ -77,7 +77,7 @@ export const PRODUCTION: ProductionEntry[] = [
   { id: 'P-951', jobId: 'J-1191', stage: 'Casting', partyId: 'S-03', date: '2026-11-11', inGross: 15.075, outGross: 0, pieces: 15, status: 'In progress', note: 'Die-striking' },
 ];
 
-export const RETURNS: ReturnEntry[] = [
+const RAW_RETURNS: ReturnEntry[] = [
   { id: 'R-7060', jobId: 'J-1160', from: 'K-03', type: 'Finished goods', gross: 42.900, declaredFineness: 0.916, pieces: 24, date: '2026-10-30', partial: false },
   { id: 'R-7061', jobId: 'J-1160', from: 'K-03', type: 'Dust & sweep', gross: 0.950, declaredFineness: 0.4, assayedFineness: 0.38, pieces: 0, date: '2026-10-30', partial: false },
   { id: 'R-7088', jobId: 'J-1175', from: 'K-05', type: 'Finished goods', gross: 26.200, declaredFineness: 0.75, pieces: 10, date: '2026-11-06', partial: false },
@@ -87,6 +87,33 @@ export const RETURNS: ReturnEntry[] = [
   { id: 'R-7110', jobId: 'J-1190', from: 'K-08', type: 'Finished goods', gross: 28.0, declaredFineness: 0.916, pieces: 1, date: '2026-11-10', partial: true },
   { id: 'R-7111', jobId: 'J-1190', from: 'K-08', type: 'WIP', gross: 10.0, declaredFineness: 0.916, pieces: 0, date: '2026-11-10', partial: true },
 ];
+
+/* ---------------------------------------------------------------------------
+ * Provenance, challan references and transfer acknowledgements (PRD: evidence-grade
+ * weighing, challan-ready records, acknowledged custody edges). Synthetic and
+ * deterministic; method is always 'Manual entry' because no scale is integrated.
+ * ------------------------------------------------------------------------- */
+const manual = (scaleId: string, operator: string): Measurement => ({ scaleId, operator, method: 'Manual entry' });
+const unitScale = (partyId: string) => {
+  const p = PARTIES.find((x) => x.id === partyId);
+  if (!p) return 'SC-01';
+  if (p.role === 'Subcontractor') return `${p.id} own scale`;
+  return p.unit.startsWith('Unit A') ? 'SC-A1' : 'SC-B1';
+};
+/** Vault scale used for each job's returns (J-1182 used Scale 4 — see CAL-04; J-1175 used Scale 2 — see WS-8790). */
+const RETURN_SCALE: Record<string, string> = { 'J-1182': 'SC-04', 'J-1175': 'SC-02' };
+/** T-5112 (half batch to the die-striker) has no signed receipt yet. */
+const UNSIGNED_TRANSFERS = new Set(['T-5112']);
+
+export const LOTS: Lot[] = RAW_LOTS.map((l) => ({ ...l, challanRef: `JWC-26-${l.id.slice(2)}`, measurement: manual('SC-01', 'Vault desk') }));
+export const TRANSFERS: Transfer[] = RAW_TRANSFERS.map((t) => ({
+  ...t,
+  challanRef: `JWC-26-${t.id.slice(2)}`,
+  acknowledged: !UNSIGNED_TRANSFERS.has(t.id),
+  ackAt: UNSIGNED_TRANSFERS.has(t.id) ? undefined : t.date,
+}));
+export const PRODUCTION: ProductionEntry[] = RAW_PRODUCTION.map((p) => ({ ...p, measurement: manual(unitScale(p.partyId), PARTIES.find((x) => x.id === p.partyId)?.name ?? p.partyId) }));
+export const RETURNS: ReturnEntry[] = RAW_RETURNS.map((r) => ({ ...r, stoneWeight: r.stoneWeight ?? 0, measurement: manual(RETURN_SCALE[r.jobId] ?? 'SC-01', 'Vault desk') }));
 
 export const EVIDENCE: EvidenceDoc[] = [
   { id: 'AR-3307', jobId: 'J-1182', kind: 'Assay report', title: 'Assay AR-3307 — scrap lot R-7101', detail: 'XRF + fire assay: 75.0% Au (declared 91.6%).', date: '2026-11-09' },

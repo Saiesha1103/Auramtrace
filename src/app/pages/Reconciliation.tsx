@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useAppState } from '../data/store';
-import { fine, g3, pct, r3, reconcile, returnFine, type JobRecon } from '../data/calc';
+import { fine, g3, isMilligram, MG_PRECISION_ERROR, pct, r3, reconcile, returnFine, type JobRecon } from '../data/calc';
 import type { Job } from '../data/types';
 import { navigate } from '../router';
 import { Btn, Card, DataTable, Empty, Field, FormGrid, Kpi, PageHeader, Pill, SelectFilter, Toolbar, statusTone } from '../ui';
@@ -171,7 +171,11 @@ function FineCalculator() {
         </Field>
       </FormGrid>
       <p className="calc-preview" style={{ marginTop: 14 }}>
-        Fine gold = {Number(gross || 0).toFixed(3)} g × {pct(used || 0)} = <b>{g3(fine(Number(gross) || 0, used || 0))}</b>
+        {isMilligram(Number(gross || 0)) ? (
+          <>Fine gold = {Number(gross || 0).toFixed(3)} g × {pct(used || 0)} = <b>{g3(fine(Number(gross) || 0, used || 0))}</b></>
+        ) : (
+          MG_PRECISION_ERROR
+        )}
       </p>
     </Card>
   );

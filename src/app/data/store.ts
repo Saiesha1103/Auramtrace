@@ -1,7 +1,7 @@
 import { useSyncExternalStore } from 'react';
 import { AUDIT_SEED, EVIDENCE, JOBS, LOTS, PARTIES, PRODUCTION, RETURNS, SETTLEMENT_STATUS, TRANSFERS, VAULT } from './seed';
-import { custody, fine, r3 } from './calc';
-import type { AuditEntry, EvidenceDoc, Job, Lot, Party, ProductionEntry, ReturnEntry, SettlementStatus, Stage, Transfer, TransferKind, ReturnType } from './types';
+import { custody, fine, isMilligram, MG_PRECISION_ERROR, pct, r3 } from './calc';
+import type { AuditEntry, EvidenceDoc, Job, Lot, Measurement, Party, ProductionEntry, ReturnEntry, SettlementStatus, Stage, Transfer, TransferKind, ReturnType } from './types';
 
 /**
  * In-browser session store for the prototype.
@@ -85,6 +85,7 @@ const positive = (n: number) => Number.isFinite(n) && n > 0;
 export function createJob(input: Omit<Job, 'id' | 'createdAt'> & { createdAt: string }): Result {
   if (!input.title.trim()) return { ok: false, error: 'Title is required.' };
   if (!positive(input.pieces) || !positive(input.targetGrossPerPiece)) return { ok: false, error: 'Pieces and target weight must be greater than zero.' };
+  if (!isMilligram(input.targetGrossPerPiece)) return { ok: false, error: MG_PRECISION_ERROR };
   if (!input.deadline) return { ok: false, error: 'Set a deadline.' };
   if (input.deadline < input.createdAt) return { ok: false, error: 'Deadline cannot be before the creation date.' };
   if (input.lossAllowancePct < 0 || input.lossAllowancePct > 5) return { ok: false, error: 'Loss allowance must be between 0% and 5%.' };
@@ -93,14 +94,15 @@ export function createJob(input: Omit<Job, 'id' | 'createdAt'> & { createdAt: st
   return { ok: true, id };
 }
 
-export function issueLot(input: { jobId: string; issuedTo: string; gross: number; fineness: number; date: string; source: string }): Result {
+export function issueLot(input: { jobId: string; issuedTo: string; gross: number; fineness: number; date: string; source: string; challanRef?: string; measurement?: Measurement }): Result {
   if (!state.jobs.some((j) => j.id === input.jobId)) return { ok: false, error: 'Choose a job.' };
   if (!positive(input.gross)) return { ok: false, error: 'Gross weight must be greater than zero.' };
+  if (!isMilligram(input.gross)) return { ok: false, error: MG_PRECISION_ERROR };
   if (!(input.fineness > 0 && input.fineness <= 0.9999)) return { ok: false, error: 'Fineness must be between 0 and 0.9999.' };
   const id = nextId('L');
   commit(
     { lots: [...state.lots, { ...input, gross: r3(input.gross), id, acknowledged: false }] },
-    `Issued lot ${id} (${input.gross.toFixed(3)} g @ ${(input.fineness * 100).toFixed(1)}%) to ${partyName(input.issuedTo)}`,
+    `Issued lot ${id} (${input.gross.toFixed(3)} g @ ${pct(input.fineness)}) to ${partyName(input.issuedTo)}${input.challanRef ? ` · challan ${input.challanRef}` : ''}`,
     input.jobId,
   );
   return { ok: true, id };
@@ -114,36 +116,54 @@ export function acknowledgeLot(lotId: string, date: string): Result {
   return { ok: true, id: lotId };
 }
 
-export function createTransfer(input: { jobId: string; from: string; to: string; gross: number; fineness: number; date: string; kind: TransferKind; purpose: string }): Result {
+export function createTransfer(input: { jobId: string; from: string; to: string; gross: number; fineness: number; date: string; kind: TransferKind; purpose: string; challanRef?: string }): Result {
   if (!state.parties.some((p) => p.id === input.to)) return { ok: false, error: 'Choose a recipient for every transfer leg.' };
   if (input.from === input.to) return { ok: false, error: 'Sender and receiver must differ.' };
   if (!positive(input.gross)) return { ok: false, error: 'Gross weight must be greater than zero.' };
+  if (!isMilligram(input.gross)) return { ok: false, error: MG_PRECISION_ERROR };
   const held = custody(state, input.jobId).get(input.from) ?? 0;
   const moving = fine(input.gross, input.fineness);
   if (moving > held + 0.0005) return { ok: false, error: `${partyName(input.from)} holds only ${held.toFixed(3)} g fine on this job; this transfer moves ${moving.toFixed(3)} g.` };
   const id = nextId('T');
-  commit({ transfers: [...state.transfers, { ...input, gross: r3(input.gross), id }] }, `${input.kind} transfer ${id}: ${input.gross.toFixed(3)} g ${partyName(input.from)} → ${partyName(input.to)}`, input.jobId);
+  commit({ transfers: [...state.transfers, { ...input, gross: r3(input.gross), id, acknowledged: false }] }, `${input.kind} transfer ${id}: ${input.gross.toFixed(3)} g ${partyName(input.from)} → ${partyName(input.to)}`, input.jobId);
   return { ok: true, id };
 }
 
-export function addProduction(input: { jobId: string; stage: Stage; partyId: string; date: string; inGross: number; outGross: number; pieces: number; status: 'Done' | 'In progress'; note?: string }): Result {
+export function addProduction(input: { jobId: string; stage: Stage; partyId: string; date: string; inGross: number; outGross: number; pieces: number; status: 'Done' | 'In progress'; note?: string; measurement?: Measurement }): Result {
   if (!positive(input.inGross)) return { ok: false, error: 'Input weight must be greater than zero.' };
   if (input.status === 'Done' && !positive(input.outGross)) return { ok: false, error: 'Record an output weight for a completed stage.' };
+  if (!isMilligram(input.inGross) || !isMilligram(input.outGross)) return { ok: false, error: MG_PRECISION_ERROR };
   if (input.stage !== 'Alloying' && input.outGross > input.inGross) return { ok: false, error: 'Output cannot exceed input except at alloying (where alloy is added).' };
   const id = nextId('P');
   commit({ production: [...state.production, { ...input, inGross: r3(input.inGross), outGross: r3(input.outGross), id }] }, `Logged ${input.stage} (${input.status}) for ${input.jobId}`, input.jobId);
   return { ok: true, id };
 }
 
-export function recordReturn(input: { jobId: string; from: string; type: ReturnType; gross: number; declaredFineness: number; pieces: number; date: string; partial: boolean }): Result {
+export function recordReturn(input: { jobId: string; from: string; type: ReturnType; gross: number; declaredFineness: number; pieces: number; date: string; partial: boolean; stoneWeight?: number; measurement?: Measurement }): Result {
   if (!positive(input.gross)) return { ok: false, error: 'Gross weight must be greater than zero.' };
+  const stones = input.stoneWeight ?? 0;
+  if (!(stones >= 0 && stones < input.gross)) return { ok: false, error: 'Stone weight must be zero or more, and less than the gross weight.' };
+  if (!isMilligram(input.gross) || !isMilligram(stones)) return { ok: false, error: MG_PRECISION_ERROR };
   if (!(input.declaredFineness > 0 && input.declaredFineness <= 0.9999)) return { ok: false, error: 'Declared fineness must be between 0 and 0.9999.' };
   const held = custody(state, input.jobId).get(input.from) ?? 0;
-  const moving = fine(input.gross, input.declaredFineness);
+  const moving = fine(input.gross - stones, input.declaredFineness);
   if (moving > held + 0.0005) return { ok: false, error: `${partyName(input.from)} holds only ${held.toFixed(3)} g fine on this job; this return is ${moving.toFixed(3)} g.` };
   const id = nextId('R');
-  commit({ returns: [...state.returns, { ...input, gross: r3(input.gross), id }] }, `Received ${input.partial ? 'partial ' : ''}${input.type.toLowerCase()} ${id} (${input.gross.toFixed(3)} g) from ${partyName(input.from)}`, input.jobId);
+  commit({ returns: [...state.returns, { ...input, gross: r3(input.gross), stoneWeight: r3(stones), id }] }, `Received ${input.partial ? 'partial ' : ''}${input.type.toLowerCase()} ${id} (${input.gross.toFixed(3)} g) from ${partyName(input.from)}`, input.jobId);
   return { ok: true, id };
+}
+
+export function acknowledgeTransfer(transferId: string, date: string): Result {
+  const t = state.transfers.find((x) => x.id === transferId);
+  if (!t) return { ok: false, error: 'Transfer not found.' };
+  if (t.acknowledged) return { ok: false, error: 'Transfer is already acknowledged.' };
+  commit({ transfers: state.transfers.map((x) => (x.id === transferId ? { ...x, acknowledged: true, ackAt: date } : x)) }, `Recorded receipt of ${transferId} by ${partyName(t.to)}`, t.jobId);
+  return { ok: true, id: transferId };
+}
+
+/** PRD human-control check: a blocked approval attempt is itself audited. */
+export function logBlockedApproval(jobId: string, reason: string) {
+  commit({}, `Blocked settlement approval for ${jobId}: ${reason}`, jobId);
 }
 
 export function setSettlement(jobId: string, status: SettlementStatus): Result {

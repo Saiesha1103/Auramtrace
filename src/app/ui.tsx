@@ -1,5 +1,6 @@
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Icon, type IconName } from '../components/Icon';
+import type { Measurement } from './data/types';
 
 /* ------------------------------------------------------------------ layout */
 
@@ -96,6 +97,33 @@ export function Empty({ title, children }: { title: string; children?: ReactNode
       <strong>{title}</strong>
       {children && <span>{children}</span>}
     </div>
+  );
+}
+
+/** Measurement provenance (scale · operator · method). Missing provenance is shown, not hidden. */
+export function Prov({ m }: { m?: Measurement }) {
+  if (!m) return <span className="alert-text">Not recorded</span>;
+  return (
+    <span className="cell-main">
+      <span className="mono">{m.scaleId}</span>
+      <small>
+        {m.operator} · {m.method}
+      </small>
+    </span>
+  );
+}
+
+/** Manual weighing provenance fields; method is fixed to manual entry (no scale integration exists). */
+export function ProvFields({ scaleId, operator, onChange }: { scaleId: string; operator: string; onChange: (k: 'scaleId' | 'operator', v: string) => void }) {
+  return (
+    <>
+      <Field label="Scale ID" hint="Method: manual entry — no scale is connected">
+        <input value={scaleId} onChange={(e) => onChange('scaleId', e.target.value)} placeholder="e.g. SC-01" />
+      </Field>
+      <Field label="Weighed by (operator)">
+        <input value={operator} onChange={(e) => onChange('operator', e.target.value)} placeholder="e.g. Vault desk" />
+      </Field>
+    </>
   );
 }
 
@@ -483,6 +511,16 @@ export function LineChart2({ labels, a, b, unit, caption }: { labels: string[]; 
 }
 
 /* ------------------------------------------------------------------ csv */
+
+/** Client-side text file download (no server involved). */
+export function downloadText(filename: string, text: string) {
+  const url = URL.createObjectURL(new Blob([text], { type: 'text/plain;charset=utf-8' }));
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
 
 /** Real client-side export of what's on screen (no server involved). */
 export function downloadCsv(filename: string, header: string[], rows: (string | number)[][]) {

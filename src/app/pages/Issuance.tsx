@@ -5,7 +5,7 @@ import { daysBetween, fine, fmtDate, g3, pct, r3 } from '../data/calc';
 import type { Lot } from '../data/types';
 import { useLookups } from '../lookups';
 import { Link, useRoute } from '../router';
-import { Btn, Card, DataTable, DemoNote, Dialog, Field, FormGrid, FormMessage, Kpi, PageHeader, Pill, SearchInput, SelectFilter, Toolbar } from '../ui';
+import { Btn, Card, DataTable, DemoNote, Dialog, Field, FormGrid, FormMessage, Kpi, PageHeader, Pill, Prov, ProvFields, SearchInput, SelectFilter, Toolbar } from '../ui';
 
 const PURITY_PRESETS = [
   { label: 'Fine bar 999', value: 0.999 },
@@ -24,7 +24,7 @@ export function Issuance() {
   const [flash, setFlash] = useState<{ ok: boolean; text: string } | null>(null);
 
   const rows = s.lots.filter(
-    (l) => (ack === 'All' || (ack === 'Acknowledged') === l.acknowledged) && `${l.id} ${l.jobId} ${partyName(l.issuedTo)} ${l.source}`.toLowerCase().includes(q.toLowerCase()),
+    (l) => (ack === 'All' || (ack === 'Acknowledged') === l.acknowledged) && `${l.id} ${l.jobId} ${partyName(l.issuedTo)} ${l.source} ${l.challanRef ?? ''}`.toLowerCase().includes(q.toLowerCase()),
   );
   const pending = s.lots.filter((l) => !l.acknowledged);
   const totalGross = r3(s.lots.reduce((a, l) => a + l.gross, 0));
@@ -63,13 +63,14 @@ export function Issuance() {
           rowKey={(r) => r.id}
           initialSort={{ key: 'date', dir: 'desc' }}
           columns={[
-            { key: 'id', header: 'Lot', sort: (r) => r.id, render: (r) => <span className="cell-main"><b className="mono">{r.id}</b><small>{r.source}</small></span> },
+            { key: 'id', header: 'Lot', sort: (r) => r.id, render: (r) => <span className="cell-main"><b className="mono">{r.id}</b><small>{r.source}{r.challanRef ? ` · ${r.challanRef}` : ''}</small></span> },
             { key: 'date', header: 'Issued', sort: (r) => r.date, render: (r) => fmtDate(r.date) },
             { key: 'job', header: 'Job', hideSm: true, render: (r) => <Link to="jobs" id={r.jobId} className="link">{jobLabel(r.jobId)}</Link> },
             { key: 'to', header: 'Issued to', render: (r) => <Link to="karigars" id={r.issuedTo} className="link">{partyName(r.issuedTo)}</Link> },
             { key: 'gross', header: 'Gross', align: 'right', sort: (r) => r.gross, render: (r) => <span className="mono">{g3(r.gross)}</span> },
             { key: 'pur', header: 'Purity', align: 'right', sort: (r) => r.fineness, render: (r) => <span className="mono">{pct(r.fineness)}</span> },
             { key: 'fine', header: 'Fine', align: 'right', sort: (r) => fine(r.gross, r.fineness), render: (r) => <span className="mono gold">{g3(fine(r.gross, r.fineness))}</span> },
+            { key: 'prov', header: 'Weighed on', hideSm: true, render: (r) => <Prov m={r.measurement} /> },
             {
               key: 'ack',
               header: 'Acknowledgement',
@@ -96,15 +97,16 @@ function IssueDialog({ open, onClose, initialJob }: { open: boolean; onClose: ()
   const holders = s.parties.filter((p) => p.role === 'Head karigar' || p.role === 'Karigar');
   const firstJob = initialJob || s.jobs[0]?.id || '';
   const defaultTo = (jid: string) => s.jobs.find((j) => j.id === jid)?.headKarigarId ?? holders[0]?.id ?? '';
-  const [f, setF] = useState({ jobId: firstJob, issuedTo: defaultTo(firstJob), gross: '', fineness: '0.995', source: '', date: AS_OF });
+  const [f, setF] = useState({ jobId: firstJob, issuedTo: defaultTo(firstJob), gross: '', fineness: '0.995', source: '', date: AS_OF, challanRef: '', scaleId: 'SC-01', operator: 'Vault desk' });
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const g = Number(f.gross) || 0;
   const fn = Number(f.fineness) || 0;
 
   const submit = () => {
-    const res = issueLot({ jobId: f.jobId, issuedTo: f.issuedTo, gross: g, fineness: fn, date: f.date, source: f.source || 'Unspecified bar' });
+    if (!f.scaleId.trim() || !f.operator.trim()) return setMsg({ ok: false, text: 'Record the scale ID and operator for this weighing.' });
+    const res = issueLot({ jobId: f.jobId, issuedTo: f.issuedTo, gross: g, fineness: fn, date: f.date, source: f.source || 'Unspecified bar', challanRef: f.challanRef.trim() || undefined, measurement: { scaleId: f.scaleId.trim(), operator: f.operator.trim(), method: 'Manual entry' } });
     setMsg(res.ok ? { ok: true, text: `Issued ${res.id} in this browser session only — not saved to any server. Acknowledgement is pending.` } : { ok: false, text: res.error });
-    if (res.ok) setF({ ...f, gross: '', source: '' });
+    if (res.ok) setF({ ...f, gross: '', source: '', challanRef: '' });
   };
   const close = () => {
     setMsg(null);
@@ -156,6 +158,10 @@ function IssueDialog({ open, onClose, initialJob }: { open: boolean; onClose: ()
         <Field label="Issue date">
           <input type="date" value={f.date} max={AS_OF} onChange={(e) => setF({ ...f, date: e.target.value })} />
         </Field>
+        <Field label="Challan / issue record ref" hint="Reference only — AURUMTRACE is not a GST filing system">
+          <input value={f.challanRef} onChange={(e) => setF({ ...f, challanRef: e.target.value })} placeholder="JWC-…" />
+        </Field>
+        <ProvFields scaleId={f.scaleId} operator={f.operator} onChange={(k, v) => setF({ ...f, [k]: v })} />
       </FormGrid>
       <p className="calc-preview">
         Fine gold: <b>{g3(fine(g, fn))}</b> = {g.toFixed(3)} g × {pct(fn)}

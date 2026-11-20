@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { setSettlement, useAppState } from '../data/store';
+import { logBlockedApproval, setSettlement, useAppState } from '../data/store';
 import { GOLD_RATE_PER_FINE_G, exceptions, g3, inr, reconcile, settlementFor, type SettlementLine } from '../data/calc';
 import type { SettlementStatus } from '../data/types';
 import { useLookups } from '../lookups';
@@ -36,7 +36,10 @@ export function Settlement({ id }: { id?: string }) {
   const selected = rows.find((r) => r.jobId === id);
 
   const act = (r: Row, next: SettlementStatus) => {
-    if (next === 'Approved' && r.blockers.length) return setMsg({ ok: false, text: `Cannot approve ${r.jobId}: ${r.blockers.join('; ')}.` });
+    if (next === 'Approved' && r.blockers.length) {
+      logBlockedApproval(r.jobId, r.blockers.join('; '));
+      return setMsg({ ok: false, text: `Cannot approve ${r.jobId}: ${r.blockers.join('; ')}. The blocked attempt was written to the audit history (local demo).` });
+    }
     setSettlement(r.jobId, next);
     setMsg({ ok: true, text: `${r.jobId} set to “${next}” in this browser session only (local demo — no server approval was recorded).` });
   };

@@ -4,12 +4,17 @@ import type { AppState } from './store';
 
 /**
  * Pure, deterministic calculations. Same state in → same numbers out.
- * Fine gold is always gross × fineness, rounded to 0.001 g (milligram).
+ * Fine gold = net metal weight × fineness, rounded to 0.001 g (milligram).
+ * Net metal = gross − stones/non-metal components (PRD: never use gross jewellery weight directly).
  */
 
 export const r3 = (n: number) => Math.round(n * 1000) / 1000;
+/** A gold weight is valid only if recorded to at most 0.001 g; never silently rounded on entry. */
+export const isMilligram = (n: number) => Number.isFinite(n) && Math.abs(n * 1000 - Math.round(n * 1000)) < 1e-6;
+export const MG_PRECISION_ERROR = 'Weights are recorded to 0.001 g; use at most 3 decimal places.';
 export const fine = (gross: number, fineness: number) => r3(gross * fineness);
-export const returnFine = (r: ReturnEntry) => fine(r.gross, r.assayedFineness ?? r.declaredFineness);
+export const netMetal = (r: ReturnEntry) => r3(r.gross - (r.stoneWeight ?? 0));
+export const returnFine = (r: ReturnEntry) => fine(netMetal(r), r.assayedFineness ?? r.declaredFineness);
 
 /** Synthetic reference rate used only to value gold differences in settlement (₹ per fine gram). */
 export const GOLD_RATE_PER_FINE_G = 7850;
@@ -89,7 +94,7 @@ export function reconcile(s: AppState, job: Job): JobRecon {
   const varianceFine = closed ? outstandingFine : 0;
   const unexplainedFine = closed ? r3(Math.max(0, varianceFine - allowanceFine)) : 0;
   const purityShortfallFine = r3(
-    rets.reduce((a, r) => a + (r.assayedFineness !== undefined && r.assayedFineness < r.declaredFineness ? r.gross * (r.declaredFineness - r.assayedFineness) : 0), 0),
+    rets.reduce((a, r) => a + (r.assayedFineness !== undefined && r.assayedFineness < r.declaredFineness ? netMetal(r) * (r.declaredFineness - r.assayedFineness) : 0), 0),
   );
   const status: ReconStatus = lots.length === 0 ? 'Not issued' : !closed ? 'Open' : unexplainedFine > 0 ? 'Exception' : 'Within tolerance';
   return { jobId: job.id, issuedFine, returnedFine, returnedByType, outstandingFine, closed, allowanceFine, varianceFine, unexplainedFine, purityShortfallFine, status };
@@ -113,7 +118,7 @@ export function isOverdue(s: AppState, job: Job) {
 
 /* --------------------------------------------------------------- exceptions */
 
-export type ExceptionKind = 'Variance' | 'Purity mismatch' | 'Unacknowledged lot' | 'Overdue job';
+export type ExceptionKind = 'Variance' | 'Purity mismatch' | 'Unacknowledged lot' | 'Unacknowledged transfer' | 'Overdue job';
 export interface ExceptionItem {
   id: string;
   jobId: string;
@@ -147,13 +152,16 @@ export function exceptions(s: AppState): ExceptionItem[] {
         jobId: job.id,
         kind: 'Purity mismatch',
         severity: 'Medium',
-        amountFine: r3(r.gross * (r.declaredFineness - (r.assayedFineness ?? 0))),
+        amountFine: r3(netMetal(r) * (r.declaredFineness - (r.assayedFineness ?? 0))),
         summary: `${r.id} declared ${(r.declaredFineness * 100).toFixed(1)}%, assayed ${((r.assayedFineness ?? 0) * 100).toFixed(1)}%`,
         raised: r.date,
       });
     }
     for (const l of s.lots.filter((x) => x.jobId === job.id && !x.acknowledged && daysBetween(x.date, AS_OF) >= 2)) {
       out.push({ id: `EX-${n}-A${l.id.slice(2)}`, jobId: job.id, kind: 'Unacknowledged lot', severity: 'Medium', amountFine: fine(l.gross, l.fineness), summary: `${l.id} unacknowledged for ${daysBetween(l.date, AS_OF)} days`, raised: l.date });
+    }
+    for (const t of s.transfers.filter((x) => x.jobId === job.id && !x.acknowledged && daysBetween(x.date, AS_OF) >= 2)) {
+      out.push({ id: `EX-${n}-T${t.id.slice(2)}`, jobId: job.id, kind: 'Unacknowledged transfer', severity: 'Medium', amountFine: fine(t.gross, t.fineness), summary: `${t.id} to receiver not signed for ${daysBetween(t.date, AS_OF)} days`, raised: t.date });
     }
     if (isOverdue(s, job)) {
       out.push({ id: `EX-${n}-D`, jobId: job.id, kind: 'Overdue job', severity: 'Low', amountFine: null, summary: `Deadline ${job.deadline} passed ${daysBetween(job.deadline, AS_OF)} days ago`, raised: job.deadline });
@@ -206,6 +214,30 @@ export function settlementFor(s: AppState, job: Job): SettlementLine | null {
 /* ---------------------------------------------------------------- formatting */
 
 export const g3 = (n: number) => `${n.toLocaleString('en-IN', { minimumFractionDigits: 3, maximumFractionDigits: 3 })} g`;
-export const pct = (f: number) => `${(f * 100).toFixed(1)}%`;
+/** Fineness in parts per thousand, as the trade writes it (0.916 → "916‰"). */
+export const pct = (f: number) => {
+  const ppt = r3(f * 1000);
+  return `${Number.isInteger(ppt) ? ppt : ppt.toFixed(1)}‰`;
+};
+
+/* ---------------------------------------------------------- missing evidence */
+
+/**
+ * Evidence gaps on a job, from recorded data only (PRD: "missing evidence" must be
+ * separated from verified facts). Deterministic; never infers what happened.
+ */
+export function missingEvidence(s: AppState, jobId: string): string[] {
+  const gaps: string[] = [];
+  for (const l of s.lots.filter((x) => x.jobId === jobId && !x.acknowledged)) gaps.push(`${l.id}: no signed receipt from ${l.issuedTo}.`);
+  for (const t of s.transfers.filter((x) => x.jobId === jobId && !x.acknowledged)) gaps.push(`${t.id}: receiver ${t.to} has not signed for the transfer.`);
+  for (const r of s.returns.filter((x) => x.jobId === jobId)) {
+    if (r.type !== 'Finished goods' && r.assayedFineness === undefined) gaps.push(`${r.id}: ${r.type.toLowerCase()} not assayed — declared fineness used.`);
+    if (!r.measurement) gaps.push(`${r.id}: no scale / operator recorded for the weighing.`);
+  }
+  const docs = s.evidence.filter((d) => d.jobId === jobId);
+  const finals = s.returns.filter((x) => x.jobId === jobId && !x.partial);
+  if (finals.length && !docs.some((d) => d.kind === 'Weighing slip')) gaps.push('No weighing slip linked for the final return.');
+  return gaps;
+}
 export const inr = (n: number) => `₹${Math.round(n).toLocaleString('en-IN')}`;
 export const fmtDate = (d: string) => new Date(d + (d.length === 10 ? 'T00:00' : '')).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });

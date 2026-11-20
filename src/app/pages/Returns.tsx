@@ -1,11 +1,11 @@
 import { useMemo, useState } from 'react';
 import { recordReturn, useAppState } from '../data/store';
 import { AS_OF } from '../data/seed';
-import { custody, fine, fmtDate, g3, pct, r3, returnFine } from '../data/calc';
+import { custody, fine, fmtDate, g3, netMetal, pct, r3, returnFine } from '../data/calc';
 import type { ReturnEntry, ReturnType } from '../data/types';
 import { useLookups } from '../lookups';
 import { Link, useRoute } from '../router';
-import { Btn, Card, DataTable, DemoNote, Dialog, Field, FormGrid, FormMessage, Kpi, PageHeader, Pill, SelectFilter, Toolbar } from '../ui';
+import { Btn, Card, DataTable, DemoNote, Dialog, Field, FormGrid, FormMessage, Kpi, PageHeader, Pill, Prov, ProvFields, SelectFilter, Toolbar } from '../ui';
 
 const TYPES: ReturnType[] = ['Finished goods', 'Scrap', 'Dust & sweep', 'WIP'];
 const TYPE_ICON = { 'Finished goods': 'return', Scrap: 'scale', 'Dust & sweep': 'flame', WIP: 'manufacture' } as const;
@@ -55,6 +55,7 @@ export function Returns() {
             { key: 'type', header: 'Type', sort: (r) => r.type, render: (r) => <span className="row-actions" style={{ justifyContent: 'flex-start' }}>{r.type}{r.partial ? <Pill tone="warn" icon={null}>Partial</Pill> : <Pill tone="muted" icon={null}>Final</Pill>}</span> },
             { key: 'pcs', header: 'Pcs', align: 'right', hideSm: true, render: (r) => r.pieces || '—' },
             { key: 'gross', header: 'Gross', align: 'right', sort: (r) => r.gross, render: (r) => <span className="mono">{g3(r.gross)}</span> },
+            { key: 'net', header: 'Net metal', align: 'right', hideSm: true, render: (r) => <span className="cell-main" style={{ textAlign: 'right' }}><span className="mono">{g3(netMetal(r))}</span><small>{r.stoneWeight ? `stones ${r.stoneWeight.toFixed(3)} g` : 'no stones'}</small></span> },
             {
               key: 'purity',
               header: 'Purity',
@@ -69,6 +70,7 @@ export function Returns() {
                 ),
             },
             { key: 'fine', header: 'Fine', align: 'right', sort: (r) => returnFine(r), render: (r) => <span className="mono gold">{g3(returnFine(r))}</span> },
+            { key: 'prov', header: 'Weighed on', hideSm: true, render: (r) => <Prov m={r.measurement} /> },
           ]}
         />
       </Card>
@@ -83,15 +85,18 @@ function ReturnDialog({ open, onClose, initialJob }: { open: boolean; onClose: (
   const [jobId, setJobId] = useState(initialJob);
   const holders = useMemo(() => [...custody(s, jobId).entries()].filter(([, v]) => v > 0.0005), [s, jobId]);
   const job = s.jobs.find((j) => j.id === jobId);
-  const [f, setF] = useState({ from: '', type: 'Finished goods' as ReturnType, gross: '', fineness: '', pieces: '0', partial: true });
+  const [f, setF] = useState({ from: '', type: 'Finished goods' as ReturnType, gross: '', stones: '0', fineness: '', pieces: '0', partial: true, scaleId: 'SC-01', operator: 'Vault desk' });
   const from = f.from || holders[0]?.[0] || '';
   const fn = Number(f.fineness || job?.fineness || 0);
   const g = Number(f.gross) || 0;
+  const st = Number(f.stones) || 0;
+  const net = r3(g - st);
   const held = custody(s, jobId).get(from) ?? 0;
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const submit = () => {
     if (!from) return setMsg({ ok: false, text: 'Nobody holds gold on this job.' });
-    const res = recordReturn({ jobId, from, type: f.type, gross: g, declaredFineness: fn, pieces: Number(f.pieces) || 0, date: AS_OF, partial: f.partial });
+    if (!f.scaleId.trim() || !f.operator.trim()) return setMsg({ ok: false, text: 'Record the scale ID and operator for this weighing.' });
+    const res = recordReturn({ jobId, from, type: f.type, gross: g, stoneWeight: st, declaredFineness: fn, pieces: Number(f.pieces) || 0, date: AS_OF, partial: f.partial, measurement: { scaleId: f.scaleId.trim(), operator: f.operator.trim(), method: 'Manual entry' } });
     setMsg(res.ok ? { ok: true, text: `Recorded ${res.id} in this browser session only — not saved to any server. Purity is as declared until assayed.` } : { ok: false, text: res.error });
   };
   const close = () => {
@@ -142,13 +147,17 @@ function ReturnDialog({ open, onClose, initialJob }: { open: boolean; onClose: (
         <Field label="Pieces">
           <input type="number" min={0} step={1} value={f.pieces} onChange={(e) => setF({ ...f, pieces: e.target.value })} />
         </Field>
+        <Field label="Stone / non-metal weight (g)" hint="Excluded before fine gold is calculated">
+          <input type="number" min={0} step={0.001} value={f.stones} onChange={(e) => setF({ ...f, stones: e.target.value })} />
+        </Field>
+        <ProvFields scaleId={f.scaleId} operator={f.operator} onChange={(k, v) => setF({ ...f, [k]: v })} />
         <label className="check-row field-wide">
           <input type="checkbox" checked={f.partial} onChange={(e) => setF({ ...f, partial: e.target.checked })} />
           Partial return — more gold is still expected on this job (untick for the final return, which closes the job for reconciliation)
         </label>
       </FormGrid>
       <p className="calc-preview">
-        Fine returned: <b>{g3(fine(g, fn))}</b> · holder keeps <b>{g3(r3(held - fine(g, fn)))}</b>
+        Net metal <b>{g3(net)}</b> = {g.toFixed(3)} − {st.toFixed(3)} stones · fine returned <b>{g3(fine(net, fn))}</b> · holder keeps <b>{g3(r3(held - fine(net, fn)))}</b>
       </p>
       <FormMessage result={msg} />
     </Dialog>

@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
-import { createTransfer, useAppState } from '../data/store';
+import { acknowledgeTransfer, createTransfer, useAppState } from '../data/store';
 import { AS_OF, VAULT } from '../data/seed';
-import { custody, fine, fmtDate, g3, ledger, pct, r3 } from '../data/calc';
+import { custody, daysBetween, fine, fmtDate, g3, isMilligram, ledger, MG_PRECISION_ERROR, pct, r3 } from '../data/calc';
 import type { Transfer, TransferKind } from '../data/types';
 import { useLookups } from '../lookups';
 import { Link, useRoute } from '../router';
@@ -15,8 +15,13 @@ export function Transfers() {
   const [kind, setKind] = useState('All kinds');
   const [jobId, setJobId] = useState(query.get('job') ?? 'J-1168');
   const [open, setOpen] = useState(false);
+  const [flash, setFlash] = useState<{ ok: boolean; text: string } | null>(null);
 
   const rows = s.transfers.filter((t) => kind === 'All kinds' || t.kind === kind);
+  const doAck = (t: Transfer) => {
+    const res = acknowledgeTransfer(t.id, AS_OF);
+    setFlash(res.ok ? { ok: true, text: `${t.id} receipt recorded in this browser session only (local demo — no server record).` } : { ok: false, text: res.error });
+  };
   const jobEvents = useMemo(() => ledger(s).filter((e) => e.jobId === jobId), [s, jobId]);
   const holders = useMemo(() => [...custody(s, jobId).entries()].filter(([, v]) => v > 0.0005), [s, jobId]);
 
@@ -30,6 +35,7 @@ export function Transfers() {
       />
       <Tabs label="Transfer views" value={tab} onChange={setTab} tabs={[{ key: 'register', label: 'Register', count: s.transfers.length }, { key: 'timeline', label: 'Custody timeline' }]} />
 
+      <FormMessage result={flash} />
       {tab === 'register' ? (
         <Card pad={false}>
           <div style={{ padding: '16px 20px 0' }}>
@@ -43,13 +49,27 @@ export function Transfers() {
             rowKey={(r) => r.id}
             initialSort={{ key: 'date', dir: 'desc' }}
             columns={[
-              { key: 'id', header: 'Transfer', sort: (r) => r.id, render: (r) => <span className="cell-main"><b className="mono">{r.id}</b><small>{r.purpose}</small></span> },
+              { key: 'id', header: 'Transfer', sort: (r) => r.id, render: (r) => <span className="cell-main"><b className="mono">{r.id}</b><small>{r.purpose}{r.challanRef ? ` · ${r.challanRef}` : ''}</small></span> },
               { key: 'date', header: 'Date', sort: (r) => r.date, render: (r) => fmtDate(r.date) },
               { key: 'job', header: 'Job', hideSm: true, render: (r) => <Link to="jobs" id={r.jobId} className="link">{jobLabel(r.jobId)}</Link> },
               { key: 'route', header: 'From → To', render: (r) => `${partyName(r.from)} → ${partyName(r.to)}` },
               { key: 'kind', header: 'Kind', sort: (r) => r.kind, render: (r) => <Pill tone={r.kind === 'Full' ? 'muted' : 'gold'} icon={null}>{r.kind}</Pill> },
               { key: 'gross', header: 'Gross', align: 'right', sort: (r) => r.gross, render: (r) => <span className="mono">{g3(r.gross)}</span> },
               { key: 'fine', header: 'Fine', align: 'right', sort: (r) => fine(r.gross, r.fineness), render: (r) => <span className="mono gold">{g3(fine(r.gross, r.fineness))}</span> },
+              {
+                key: 'ack',
+                header: 'Receipt',
+                sort: (r) => (r.acknowledged ? 1 : 0),
+                render: (r) =>
+                  r.acknowledged ? (
+                    <Pill tone="ok">Signed</Pill>
+                  ) : (
+                    <span className="row-actions" style={{ justifyContent: 'flex-start' }}>
+                      <Pill tone="warn">Pending {daysBetween(r.date, AS_OF)}d</Pill>
+                      <Btn size="sm" variant="quiet" icon="check" onClick={() => doAck(r)}>Record</Btn>
+                    </span>
+                  ),
+              },
             ]}
           />
         </Card>
@@ -99,6 +119,7 @@ function TransferDialog({ open, onClose }: { open: boolean; onClose: () => void 
   const [mode, setMode] = useState<'single' | 'split'>('single');
   const [fineness, setFineness] = useState('0.995');
   const [purpose, setPurpose] = useState('');
+  const [challan, setChallan] = useState('');
   const [legs, setLegs] = useState<Leg[]>([{ to: '', gross: '' }]);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const fn = Number(fineness) || 0;
@@ -109,16 +130,17 @@ function TransferDialog({ open, onClose }: { open: boolean; onClose: () => void 
     // validate all legs first so a split is never half-recorded
     const bad = legs.findIndex((l) => !l.to || !(Number(l.gross) > 0));
     if (bad >= 0) return setMsg({ ok: false, text: `${mode === 'split' ? `Recipient ${bad + 1}` : 'The transfer'} needs a receiver and a gross weight above zero. Nothing was recorded.` });
+    if (legs.some((l) => !isMilligram(Number(l.gross)))) return setMsg({ ok: false, text: `${MG_PRECISION_ERROR} Nothing was recorded.` });
     if (new Set(legs.map((l) => l.to)).size !== legs.length) return setMsg({ ok: false, text: 'Each recipient can appear only once in a split. Nothing was recorded.' });
     if (movingFine > held + 0.0005) return setMsg({ ok: false, text: `${partyName(sender)} holds ${g3(held)} fine on ${jobId}; these legs move ${g3(movingFine)}.` });
     const done: string[] = [];
     for (const leg of legs) {
       const kind: TransferKind = mode === 'split' ? 'Split' : fine(Number(leg.gross) || 0, fn) >= held - 0.0005 ? 'Full' : 'Partial';
-      const res = createTransfer({ jobId, from: sender, to: leg.to, gross: Number(leg.gross), fineness: fn, date: AS_OF, kind, purpose: purpose || (mode === 'split' ? 'Job split' : 'Hand-off') });
+      const res = createTransfer({ jobId, from: sender, to: leg.to, gross: Number(leg.gross), fineness: fn, date: AS_OF, kind, purpose: purpose || (mode === 'split' ? 'Job split' : 'Hand-off'), challanRef: challan.trim() || undefined });
       if (!res.ok) return setMsg({ ok: false, text: `${done.length ? `Recorded ${done.join(', ')}; then stopped: ` : ''}${res.error}` });
       done.push(res.id);
     }
-    setMsg({ ok: true, text: `Recorded ${done.join(', ')} in this browser session only — not saved to any server.` });
+    setMsg({ ok: true, text: `Recorded ${done.join(', ')} in this browser session only — not saved to any server. Receiver acknowledgement is pending.` });
     setLegs([{ to: '', gross: '' }]);
   };
   const close = () => {
@@ -160,6 +182,9 @@ function TransferDialog({ open, onClose }: { open: boolean; onClose: () => void 
         </Field>
         <Field label="Purpose">
           <input value={purpose} onChange={(e) => setPurpose(e.target.value)} placeholder="e.g. Batch A — casting" />
+        </Field>
+        <Field label="Challan ref" hint="Job-worker to job-worker movement record">
+          <input value={challan} onChange={(e) => setChallan(e.target.value)} placeholder="JWC-…" />
         </Field>
         {legs.map((leg, i) => (
           <div key={i} className="field-wide form-grid">

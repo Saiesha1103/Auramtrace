@@ -14,6 +14,16 @@ export interface Party {
   since: string;
 }
 
+/**
+ * Measurement provenance (PRD: evidence-grade weighing). Prototype data is
+ * manual entry only — no scale integration exists, so 'Device' is never used.
+ */
+export interface Measurement {
+  scaleId: string;
+  operator: string;
+  method: 'Manual entry' | 'Imported';
+}
+
 export type JobStatus = 'Draft' | 'Issued' | 'In production' | 'Returned' | 'Reconciled' | 'Settled';
 
 export interface Job {
@@ -43,6 +53,9 @@ export interface Lot {
   source: string;
   acknowledged: boolean;
   ackAt?: string;
+  /** job-work challan / internal issue record reference */
+  challanRef?: string;
+  measurement?: Measurement;
 }
 
 export type TransferKind = 'Full' | 'Partial' | 'Split';
@@ -57,6 +70,10 @@ export interface Transfer {
   date: string;
   kind: TransferKind;
   purpose: string;
+  challanRef?: string;
+  /** receiver signed for the metal */
+  acknowledged: boolean;
+  ackAt?: string;
 }
 
 export type Stage = 'Alloying' | 'Casting' | 'Filing' | 'Setting' | 'Polishing' | 'QC';
@@ -73,6 +90,7 @@ export interface ProductionEntry {
   pieces: number;
   status: 'Done' | 'In progress';
   note?: string;
+  measurement?: Measurement;
 }
 
 export type ReturnType = 'Finished goods' | 'Scrap' | 'Dust & sweep' | 'WIP';
@@ -89,6 +107,9 @@ export interface ReturnEntry {
   pieces: number;
   date: string;
   partial: boolean;
+  /** stones / non-metal components inside gross; excluded before fine-gold calculation */
+  stoneWeight?: number;
+  measurement?: Measurement;
 }
 
 export interface EvidenceDoc {

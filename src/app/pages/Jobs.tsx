@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react';
 import { createJob, useAppState } from '../data/store';
 import { AS_OF } from '../data/seed';
-import { custody, daysBetween, fmtDate, g3, isOverdue, jobStatus, ledger, pct, r3, reconcile, returnFine } from '../data/calc';
+import { custody, daysBetween, fine, fmtDate, g3, isOverdue, jobStatus, ledger, pct, r3, reconcile, returnFine } from '../data/calc';
+import { Icon } from '../../components/Icon';
 import type { Job } from '../data/types';
 import { useLookups } from '../lookups';
 import { Link, navigate, useRoute } from '../router';
@@ -162,7 +163,7 @@ function NewJobDialog({ open, onClose }: { open: boolean; onClose: () => void })
 function JobDetail({ id }: { id: string }) {
   const s = useAppState();
   const { partyName } = useLookups();
-  const [tab, setTab] = useState<'overview' | 'custody' | 'production' | 'returns'>('overview');
+  const [tab, setTab] = useState<'overview' | 'lineage' | 'custody' | 'production' | 'returns'>('overview');
   const job = s.jobs.find((j) => j.id === id);
   const data = useMemo(() => {
     if (!job) return null;
@@ -215,6 +216,7 @@ function JobDetail({ id }: { id: string }) {
         onChange={setTab}
         tabs={[
           { key: 'overview', label: 'Specification' },
+          { key: 'lineage', label: 'Lineage' },
           { key: 'custody', label: 'Custody', count: data.ev.length },
           { key: 'production', label: 'Production', count: data.prod.length },
           { key: 'returns', label: 'Returns', count: data.rets.length },
@@ -254,6 +256,11 @@ function JobDetail({ id }: { id: string }) {
             )}
           </Card>
         </div>
+      )}
+      {tab === 'lineage' && (
+        <Card title="Metal lineage" actions={<Pill tone="muted" icon={null}>Derived from ledger events</Pill>}>
+          <Lineage jobId={id} />
+        </Card>
       )}
       {tab === 'custody' && (
         <Card title="Custody timeline">
@@ -305,5 +312,88 @@ function JobDetail({ id }: { id: string }) {
         </Card>
       )}
     </div>
+  );
+}
+
+/**
+ * Metal Lineage Graph (PRD signature feature 1): the job as a custody tree.
+ * Every edge is a ledger event (issue or transfer) with its fine weight and receipt status;
+ * leaves show metal returned to the vault. "Holds now" is the derived custody balance.
+ */
+function Lineage({ jobId }: { jobId: string }) {
+  const s = useAppState();
+  const { partyName } = useLookups();
+  const hold = custody(s, jobId);
+  const lots = s.lots.filter((l) => l.jobId === jobId);
+  const trs = s.transfers.filter((t) => t.jobId === jobId);
+  const rets = s.returns.filter((r) => r.jobId === jobId);
+  if (!lots.length) return <Empty title="No gold issued on this job yet" />;
+
+  const branch = (partyId: string, seen: Set<string>): React.ReactNode => {
+    const outs = trs.filter((t) => t.from === partyId && !seen.has(t.to));
+    const back = rets.filter((r) => r.from === partyId);
+    if (!outs.length && !back.length) return null;
+    return (
+      <ul className="tree">
+        {outs.map((t) => (
+          <li key={t.id}>
+            <Edge party={t.to} id={t.id} label={`${t.kind} transfer`} fineG={fine(t.gross, t.fineness)} signed={t.acknowledged} held={hold.get(t.to) ?? 0} name={partyName(t.to)} />
+            {branch(t.to, new Set([...seen, t.to]))}
+          </li>
+        ))}
+        {back.map((r) => (
+          <li key={r.id}>
+            <div className="tree-node">
+              <Icon name="return" size={16} />
+              <span className="cell-main">
+                <b>Returned to vault · {r.type}{r.partial ? ' (partial)' : ''}</b>
+                <small className="mono">{r.id} · {fmtDate(r.date)}</small>
+              </span>
+              <span className="mono gold">{g3(returnFine(r))}</span>
+            </div>
+          </li>
+        ))}
+      </ul>
+    );
+  };
+
+  return (
+    <ul className="tree tree-root">
+      <li>
+        <div className="tree-node">
+          <span className="avatar">AT</span>
+          <span className="cell-main">
+            <b>Vault · Manufacturer</b>
+            <small>Issued {g3(r3(lots.reduce((a, l) => a + fine(l.gross, l.fineness), 0)))} fine on {jobId}</small>
+          </span>
+        </div>
+        <ul className="tree">
+          {lots.map((l) => (
+            <li key={l.id}>
+              <Edge party={l.issuedTo} id={l.id} label="Issue" fineG={fine(l.gross, l.fineness)} signed={l.acknowledged} held={hold.get(l.issuedTo) ?? 0} name={partyName(l.issuedTo)} />
+              {branch(l.issuedTo, new Set([l.issuedTo]))}
+            </li>
+          ))}
+        </ul>
+      </li>
+    </ul>
+  );
+}
+
+function Edge({ party, id, label, fineG, signed, held, name }: { party: string; id: string; label: string; fineG: number; signed: boolean; held: number; name: string }) {
+  return (
+    <a className="tree-node" href={`#/app/karigars/${party}`}>
+      <span className="cell-main">
+        <b>{name}</b>
+        <small className="mono">
+          {id} · {label} · {g3(fineG)}
+        </small>
+      </span>
+      {signed ? <Pill tone="ok">Signed</Pill> : <Pill tone="warn">Receipt pending</Pill>}
+      <span className="cell-main" style={{ textAlign: 'right' }}>
+        <span className="mono gold">{g3(held)}</span>
+        <small>holds now</small>
+      </span>
+    </a>
   );
 }

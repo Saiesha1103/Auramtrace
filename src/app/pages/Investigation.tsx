@@ -1,11 +1,11 @@
 import { useMemo, useState } from 'react';
 import { setExceptionReview, useAppState } from '../data/store';
 import { AS_OF } from '../data/seed';
-import { daysBetween, exceptions, fmtDate, g3, ledger, pct, r3, reconcile, type ExceptionItem } from '../data/calc';
+import { daysBetween, exceptions, fmtDate, g3, ledger, missingEvidence, pct, r3, reconcile, type ExceptionItem } from '../data/calc';
 import { requestAiExplanation } from '../data/api';
 import { useLookups } from '../lookups';
 import { Link, navigate } from '../router';
-import { Btn, Card, DataTable, Empty, FormMessage, KeyValues, Kpi, PageHeader, Pill, SelectFilter, Timeline, Toolbar, statusTone, type TimelineItem } from '../ui';
+import { Btn, Card, DataTable, Empty, FormMessage, KeyValues, Kpi, PageHeader, Pill, SelectFilter, Timeline, Toolbar, downloadText, statusTone, type TimelineItem } from '../ui';
 import { Icon } from '../../components/Icon';
 
 export function Investigation({ id }: { id?: string }) {
@@ -141,6 +141,61 @@ function Case({ ex }: { ex: ExceptionItem }) {
     return out;
   }, [ex, rec, job, s, docs, partyName]);
 
+  const gaps = useMemo(() => missingEvidence(s, job.id), [s, job.id]);
+  const humanChecks =
+    ex.kind === 'Variance' || ex.kind === 'Purity mismatch'
+      ? [
+          'Confirm the scrap / dust purity with the karigar against the assay report.',
+          'Re-check the final weighing on a recently calibrated scale.',
+          'Record any agreed adjustment as a correction event — never edit the original entry.',
+        ]
+      : ex.kind === 'Overdue job'
+        ? ['Confirm a revised delivery date with the head karigar and record it.']
+        : ['Obtain the signed receipt from the receiver, or record why it is missing.'];
+
+  const downloadPacket = () => {
+    const L: string[] = [];
+    const line = (t = '') => L.push(t);
+    line('AURUMTRACE — NEUTRAL EVIDENCE PACKET');
+    line(`Case ${ex.id} · ${ex.kind} · severity ${ex.severity} · review status: ${review}`);
+    line(`Job ${job.id} — ${job.title} (${job.orderRef}) · as of ${AS_OF}`);
+    line('Data: SYNTHETIC DEMO DATA — no AURUMTRACE API connected.');
+    line('This packet lists recorded facts only. It is a discrepancy for review, not a finding of misconduct.');
+    line();
+    line('1. CHRONOLOGY');
+    for (const e of ledger(s).filter((x) => x.jobId === job.id)) line(`  ${e.date}  ${e.id.padEnd(14)} ${e.kind.padEnd(9)} ${partyName(e.from)} -> ${partyName(e.to)}  ${e.gross.toFixed(3)} g @ ${pct(e.fineness)} = ${e.fine.toFixed(3)} g fine`);
+    for (const p of s.production.filter((x) => x.jobId === job.id)) line(`  ${p.date}  ${p.id.padEnd(14)} ${p.stage.padEnd(9)} ${partyName(p.partyId)}  in ${p.inGross.toFixed(3)} g, out ${p.status === 'Done' ? p.outGross.toFixed(3) + ' g' : 'in progress'}`);
+    line();
+    line('2. ACKNOWLEDGEMENTS');
+    for (const l of s.lots.filter((x) => x.jobId === job.id)) line(`  ${l.id}  issue to ${partyName(l.issuedTo)}: ${l.acknowledged ? 'signed ' + (l.ackAt ?? '') : 'NOT SIGNED'}${l.challanRef ? '  challan ' + l.challanRef : ''}`);
+    for (const t of s.transfers.filter((x) => x.jobId === job.id)) line(`  ${t.id}  transfer to ${partyName(t.to)}: ${t.acknowledged ? 'signed ' + (t.ackAt ?? '') : 'NOT SIGNED'}${t.challanRef ? '  challan ' + t.challanRef : ''}`);
+    line();
+    line('3. WEIGHT READINGS AND FINENESS ASSUMPTIONS');
+    for (const r of s.returns.filter((x) => x.jobId === job.id)) {
+      const m = r.measurement;
+      line(`  ${r.id}  ${r.type}: gross ${r.gross.toFixed(3)} g, stones ${(r.stoneWeight ?? 0).toFixed(3)} g, declared ${pct(r.declaredFineness)}, ${r.assayedFineness !== undefined ? 'assayed ' + pct(r.assayedFineness) : 'not assayed'}; scale ${m ? m.scaleId + ' / ' + m.operator + ' / ' + m.method : 'NOT RECORDED'}`);
+    }
+    line();
+    line('4. CALCULATION BRIDGE (fine gold)');
+    line(`  Issued ${rec.issuedFine.toFixed(3)} − returned ${rec.returnedFine.toFixed(3)} = variance ${rec.closed ? rec.varianceFine.toFixed(3) : '(job open)'} g`);
+    line(`  Allowance ${job.lossAllowancePct}% = ${rec.allowanceFine.toFixed(3)} g · unexplained ${rec.closed ? rec.unexplainedFine.toFixed(3) : '—'} g`);
+    for (const f of findings) line(`  • ${f.text}${f.value ? ' [' + f.value + ']' : ''}`);
+    line();
+    line('5. EVIDENCE ON FILE');
+    for (const d of docs) line(`  ${d.id}  ${d.kind}: ${d.detail} (${d.date})`);
+    if (!docs.length) line('  none');
+    line();
+    line('6. MISSING EVIDENCE');
+    for (const g of gaps) line(`  • ${g}`);
+    if (!gaps.length) line('  none detected');
+    line();
+    line('7. REVIEW AND APPROVAL HISTORY');
+    for (const a of s.audit.filter((x) => x.target === job.id)) line(`  ${a.at}  ${a.actor}: ${a.action}${a.source === 'local-demo' ? '  [local demo session]' : ''}`);
+    line();
+    line('AI explanation: not included — no AI service is configured.');
+    downloadText(`aurumtrace-evidence-${ex.id}.txt`, L.join('\n'));
+  };
+
   const askAi = async () => {
     setBusy(true);
     const res = await requestAiExplanation(ex.id);
@@ -163,6 +218,7 @@ function Case({ ex }: { ex: ExceptionItem }) {
             <Pill tone={statusTone(ex.severity)}>{ex.severity}</Pill>
             <Pill tone={statusTone(review)}>{review}</Pill>
             <Btn icon="scale" onClick={() => navigate('reconciliation', job.id)}>Reconciliation</Btn>
+            <Btn icon="download" onClick={downloadPacket}>Evidence packet</Btn>
           </>
         }
       />
@@ -205,7 +261,8 @@ function Case({ ex }: { ex: ExceptionItem }) {
       </div>
 
       <div className="grid-2-even">
-        <Card title="Deterministic checks" actions={<Pill tone="muted" icon={null}>Rule-based · not AI</Pill>}>
+        <Card title="Rule-based findings" actions={<Pill tone="muted" icon={null}>Deterministic · not AI</Pill>}>
+          <h3 className="sub-h">Verified facts</h3>
           {findings.length ? (
             <ul className="rule-list">
               {findings.map((f, i) => (
@@ -217,8 +274,33 @@ function Case({ ex }: { ex: ExceptionItem }) {
               ))}
             </ul>
           ) : (
-            <Empty title="No rule findings for this exception" />
+            <p className="muted">No rule findings for this exception.</p>
           )}
+          <h3 className="sub-h">Missing evidence</h3>
+          {gaps.length ? (
+            <ul className="rule-list">
+              {gaps.map((g, i) => (
+                <li key={i}>
+                  <Icon name="alert" size={14} strokeWidth={2} />
+                  <span>{g}</span>
+                  <span />
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="muted">No gaps detected in the recorded evidence.</p>
+          )}
+          <h3 className="sub-h">Checks for a human</h3>
+          <ul className="rule-list">
+            {humanChecks.map((h, i) => (
+              <li key={i}>
+                <Icon name="user" size={14} />
+                <span>{h}</span>
+                <span />
+              </li>
+            ))}
+          </ul>
+          <p className="muted" style={{ marginBottom: 0 }}>This is a discrepancy for review, not a finding of misconduct.</p>
         </Card>
         <Card title="AI explanation" className="ai-panel" actions={<Pill tone="warn">Service not connected</Pill>}>
           <p className="muted" style={{ marginTop: 0 }}>
