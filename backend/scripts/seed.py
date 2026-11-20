@@ -8,6 +8,7 @@ Data is written through the same service functions the API uses, so every seeded
 obeys the custody rules (append-only events, balance checks, audit trail).
 """
 
+import os
 import sys
 from datetime import UTC, date, datetime
 from decimal import Decimal
