@@ -1636,3 +1636,108 @@
 .login-back-link:hover {
   color: var(--gold-1);
 }
+
+/* ------------------------------------------------------------------ agents & karigar portal */
+.rule-list li:not(:has(svg)) {
+  grid-template-columns: 1fr auto;
+}
+.doc-item:not(:has(svg)) {
+  grid-template-columns: 1fr;
+}
+.small {
+  font-size: 12.5px;
+}
+.agent-trace {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+}
+.agent-step {
+  display: grid;
+  grid-template-columns: 26px 1fr;
+  gap: 10px;
+  align-items: baseline;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(255, 240, 210, 0.025);
+  border-left: 2px solid var(--gold-2);
+  overflow-wrap: anywhere;
+}
+.agent-step.is-err {
+  border-left-color: #d9725f;
+}
+.agent-step code {
+  font-family: var(--mono);
+  color: var(--gold-1);
+}
+.agent-step-n {
+  font-family: var(--mono);
+  color: var(--ivory-4);
+  text-align: right;
+}
+.draft-msg {
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(255, 240, 210, 0.025);
+  display: grid;
+  gap: 6px;
+  justify-items: start;
+}
+.draft-msg p {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.5;
+}
+.app-portal .app-main {
+  margin-left: 0;
+  max-width: 1080px;
+  margin-inline: auto;
+}
+.portal-top {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 14px 24px;
+  border-bottom: 1px solid var(--line-strong);
+}
+.portal-top .sb-brand {
+  margin-right: auto;
+}
+.portal-sheets {
+  display: grid;
+  gap: 10px;
+}
+.portal-sheet {
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: rgba(255, 240, 210, 0.025);
+  display: grid;
+  gap: 6px;
+}
+.portal-sheet p {
+  margin: 0;
+}
+.portal-sheet-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+.portal-amount {
+  margin-left: auto;
+  font-family: var(--mono);
+  color: var(--ivory);
+  font-size: 15px;
+}
+.portal-dispute textarea {
+  width: 100%;
+  font: inherit;
+}
+@media (max-width: 640px) {
+  .portal-top {
+    padding: 12px 16px;
+  }
+}

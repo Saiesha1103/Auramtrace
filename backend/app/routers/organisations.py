@@ -5,7 +5,7 @@ from sqlalchemy import func, select
 
 from ..deps import DB, Admin, CurrentUser, Manager
 from ..errors import BusinessRuleViolation, Conflict, NotFound
-from ..models import AuditEvent, Organisation, User, UserRole
+from ..models import AuditEvent, Karigar, Organisation, User, UserRole
 from ..schemas import ERROR_RESPONSES, AuditOut, OrganisationOut, OrganisationUpdate, Page, UserCreate, UserOut, UserUpdate
 from ..services import audit
 from ..services.security import hash_password
@@ -41,10 +41,22 @@ def create_user(body: UserCreate, user: Admin, db: DB) -> UserOut:
     email = body.email.lower()
     if db.scalar(select(func.count()).select_from(User).where(func.lower(User.email) == email)):
         raise Conflict("An account with this email already exists", code="email_taken")
-    new = User(organisation_id=user.organisation_id, email=email, full_name=body.full_name.strip(), role=body.role, password_hash=hash_password(body.password))
+    karigar_id = None
+    if body.role == UserRole.karigar:
+        if body.karigar_id is None:
+            raise BusinessRuleViolation("A karigar login must be linked to a karigar (karigarId)", code="karigar_required")
+        k = db.get(Karigar, body.karigar_id)
+        if k is None or k.organisation_id != user.organisation_id:
+            raise NotFound("Karigar not found")
+        if db.scalar(select(func.count()).select_from(User).where(User.karigar_id == k.id)):
+            raise Conflict("This karigar already has a login", code="karigar_login_exists")
+        karigar_id = k.id
+    elif body.karigar_id is not None:
+        raise BusinessRuleViolation("Only karigar logins can be linked to a karigar", code="karigar_link_not_allowed")
+    new = User(organisation_id=user.organisation_id, email=email, full_name=body.full_name.strip(), role=body.role, password_hash=hash_password(body.password), karigar_id=karigar_id)
     db.add(new)
     db.flush()
-    audit.record(db, user, user.organisation_id, "user.created", "user", new.id, {"email": email, "role": body.role})
+    audit.record(db, user, user.organisation_id, "user.created", "user", new.id, {"email": email, "role": body.role, "karigarId": karigar_id})
     db.commit()
     return UserOut.model_validate(new)
 
@@ -57,6 +69,9 @@ def update_user(user_id: uuid.UUID, body: UserUpdate, user: Admin, db: DB) -> Us
     changes = body.model_dump(exclude_unset=True)
     if target.id == user.id and (changes.get("role", UserRole.admin) != UserRole.admin or changes.get("is_active") is False):
         raise BusinessRuleViolation("You cannot demote or deactivate your own account", code="self_lockout")
+    new_role = changes.get("role")
+    if new_role is not None and (new_role == UserRole.karigar) != (target.role == UserRole.karigar):
+        raise BusinessRuleViolation("Karigar and staff logins cannot be converted into each other; create a new account", code="role_kind_change")
     diff = {}
     if "password" in changes and changes["password"]:
         new_pw = changes.pop("password")

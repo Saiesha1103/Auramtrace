@@ -18,6 +18,8 @@ import { Reconciliation } from './pages/Reconciliation';
 import { Investigation } from './pages/Investigation';
 import { Settlement } from './pages/Settlement';
 import { Reports } from './pages/Reports';
+import { Agents } from './pages/Agents';
+import { Portal } from './pages/Portal';
 import './app.css';
 
 const VIEWS: Record<PageKey, ComponentType<{ id?: string }>> = {
@@ -30,6 +32,7 @@ const VIEWS: Record<PageKey, ComponentType<{ id?: string }>> = {
   returns: Returns,
   reconciliation: Reconciliation,
   investigation: Investigation,
+  agents: Agents,
   settlement: Settlement,
   reports: Reports,
 };
@@ -291,6 +294,29 @@ export default function AppShell() {
             }
           }}
         />
+      </div>
+    );
+  }
+
+  // Karigar logins get only their own account: no sidebar, no organisation-wide data.
+  if (apiState.authenticated && apiState.user?.role === 'karigar') {
+    return (
+      <div className="app app-portal">
+        <IconDefs />
+        <div className="app-main">
+          <header className="portal-top">
+            <a className="sb-brand" href="#top">
+              <Logo />
+            </a>
+            <span className="muted small">{apiState.user.fullName}</span>
+            <button className="abtn abtn-ghost abtn-sm" type="button" onClick={handleLogout}>
+              <span>Sign out</span>
+            </button>
+          </header>
+          <main ref={main} className="app-content" tabIndex={-1}>
+            <Portal />
+          </main>
+        </div>
       </div>
     );
   }

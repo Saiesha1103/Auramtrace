@@ -17,6 +17,7 @@ from ..schemas import (
     SettlementApproveRequest,
     SettlementRejectRequest,
     SettlementRuleCreate,
+    SettlementPaidRequest,
     SettlementRuleOut,
     SettlementWorksheetCreate,
     SettlementWorksheetOut,
@@ -28,6 +29,7 @@ from ..services.settlements import (
     generate_settlement_worksheet,
     list_settlement_rules,
     list_settlement_worksheets,
+    mark_worksheet_paid,
     reject_settlement_worksheet,
     submit_settlement_worksheet,
 )
@@ -76,6 +78,10 @@ def _to_sheet_out(w: SettlementWorksheet) -> SettlementWorksheetOut:
         rejection_reason=w.rejection_reason,
         submitted_at=w.submitted_at,
         approved_at=w.approved_at,
+        karigar_response_at=w.karigar_response_at,
+        dispute_reason=w.dispute_reason,
+        paid_at=w.paid_at,
+        payment_ref=w.payment_ref,
         created_at=w.created_at,
     )
 
@@ -144,7 +150,8 @@ def post_submit_worksheet(id: uuid.UUID, db: DB, user: Manager):
 
 @router.post("/worksheets/{id}/approve", response_model=SettlementWorksheetOut, responses=ERROR_RESPONSES)
 def post_approve_worksheet(id: uuid.UUID, req: SettlementApproveRequest, db: DB, user: Manager):
-    """Authorized human approval of settlement. Sets job status to settled."""
+    """Jeweller-side approval (four-eyes). The worksheet then waits for the karigar to accept or dispute it
+    from the karigar portal; only the karigar's acceptance settles the job."""
     sheet = get_in_org(db, SettlementWorksheet, user.organisation_id, id, "Settlement worksheet")
     approved = approve_settlement_worksheet(db, user, sheet, req)
     db.commit()
@@ -157,3 +164,12 @@ def post_reject_worksheet(id: uuid.UUID, req: SettlementRejectRequest, db: DB, u
     rejected = reject_settlement_worksheet(db, user, sheet, req)
     db.commit()
     return _to_sheet_out(rejected)
+
+
+@router.post("/worksheets/{id}/mark-paid", response_model=SettlementWorksheetOut, responses=ERROR_RESPONSES)
+def post_mark_paid(id: uuid.UUID, req: SettlementPaidRequest, db: DB, user: Manager):
+    """Record payment to the karigar (admin, manager). Allowed only after the karigar has accepted the worksheet."""
+    sheet = get_in_org(db, SettlementWorksheet, user.organisation_id, id, "Settlement worksheet")
+    paid = mark_worksheet_paid(db, user, sheet, req.payment_ref, req.paid_at)
+    db.commit()
+    return _to_sheet_out(paid)

@@ -2,7 +2,7 @@ from fastapi import APIRouter, status
 from sqlalchemy import func, select
 
 from ..config import get_settings
-from ..deps import DB, CurrentUser
+from ..deps import DB, AnyUser
 from ..errors import Conflict, Forbidden, Unauthorized
 from ..models import Organisation, User, UserRole
 from ..schemas import ERROR_RESPONSES, LoginRequest, RegisterRequest, TokenResponse, UserOut
@@ -47,5 +47,5 @@ def login(body: LoginRequest, db: DB) -> TokenResponse:
 
 
 @router.get("/me", response_model=UserOut, summary="The signed-in user")
-def me(user: CurrentUser) -> UserOut:
+def me(user: AnyUser) -> UserOut:
     return UserOut.model_validate(user)

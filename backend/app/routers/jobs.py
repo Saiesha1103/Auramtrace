@@ -91,7 +91,7 @@ def update_job(job_id: uuid.UUID, body: JobUpdate, user: Manager, db: DB) -> Job
         changes["status"] = JobStatus.cancelled
     diff = {}
     for k, v in changes.items():
-        if v is None and k not in ("notes", "order_ref", "process", "head_karigar_id"):
+        if v is None and k not in ("notes", "order_ref", "process", "head_karigar_id", "occasion_date", "occasion_label"):
             continue
         if getattr(job, k) != v:
             diff[k] = {"from": getattr(job, k), "to": v}

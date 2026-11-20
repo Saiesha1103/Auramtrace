@@ -1,6 +1,7 @@
 """AURUMTRACE API routers."""
 
 from . import (
+    agents,
     auth,
     events,
     exceptions,
@@ -9,6 +10,7 @@ from . import (
     karigars,
     lots,
     organisations,
+    portal,
     production,
     reconciliations,
     returns,
@@ -30,4 +32,6 @@ __all__ = [
     "exceptions",
     "investigations",
     "settlements",
+    "agents",
+    "portal",
 ]

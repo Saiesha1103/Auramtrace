@@ -8,6 +8,10 @@ class UserRole(StrEnum):
     manager = "manager"  # karigars, jobs, issuance, acknowledgement, reversals, audit read
     vault_operator = "vault_operator"  # lots, issuance, acknowledgement
     viewer = "viewer"  # read-only
+    karigar = "karigar"  # artisan self-service: sees ONLY their own account (portal endpoints)
+
+
+STAFF_ROLES = (UserRole.admin, UserRole.manager, UserRole.vault_operator, UserRole.viewer)
 
 
 class KarigarKind(StrEnum):
@@ -133,8 +137,14 @@ class ExceptionType(StrEnum):
 
 
 class SettlementStatus(StrEnum):
+    """draft → submitted → approved (jeweller) → karigar_accepted | disputed → paid.
+    A disputed worksheet goes back to the jeweller, who rejects it and issues a corrected one."""
+
     draft = "draft"
     submitted = "submitted"
-    approved = "approved"
+    approved = "approved"  # approved by the jeweller, awaiting the karigar
+    karigar_accepted = "karigar_accepted"  # both parties agree; payable
+    disputed = "disputed"  # karigar disagrees, with a reason
+    paid = "paid"
     rejected = "rejected"
 

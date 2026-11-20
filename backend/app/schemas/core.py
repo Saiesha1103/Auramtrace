@@ -22,6 +22,7 @@ class UserOut(CamelModel):
     full_name: str
     role: UserRole
     is_active: bool
+    karigar_id: uuid.UUID | None = None
     created_at: UtcDateTime
 
 
@@ -49,6 +50,7 @@ class UserCreate(CamelModel):
     full_name: str = Field(min_length=2, max_length=160)
     role: UserRole
     password: str = Field(min_length=10, max_length=128)
+    karigar_id: uuid.UUID | None = Field(default=None, description="Required for role=karigar: the karigar account this login may see")
 
 
 class UserUpdate(CamelModel):
@@ -160,6 +162,8 @@ class JobCreate(CamelModel):
     contract_version: str | None = Field(default=None, max_length=40)
     head_karigar_id: uuid.UUID | None = None
     due_date: date
+    occasion_date: date | None = Field(default=None, description="Customer's fixed occasion date (wedding, festival) the piece must be ready for")
+    occasion_label: str | None = Field(default=None, max_length=80, examples=["Wedding - Sharma family"])
     notes: str | None = Field(default=None, max_length=4000)
 
     @field_validator("target_gross_per_piece_g")
@@ -181,6 +185,8 @@ class JobUpdate(CamelModel):
     order_ref: str | None = Field(default=None, max_length=60)
     process: str | None = Field(default=None, max_length=120)
     due_date: date | None = None
+    occasion_date: date | None = None
+    occasion_label: str | None = Field(default=None, max_length=80)
     notes: str | None = Field(default=None, max_length=4000)
     head_karigar_id: uuid.UUID | None = None
     status: Literal["cancelled"] | None = Field(default=None, description="Phase 1 only allows cancelling a job that has no gold issued")
@@ -200,6 +206,8 @@ class JobOut(CamelModel):
     contract_version: str | None
     head_karigar_id: uuid.UUID | None
     due_date: date
+    occasion_date: date | None = None
+    occasion_label: str | None = None
     notes: str | None
     status: JobStatus
     created_at: UtcDateTime

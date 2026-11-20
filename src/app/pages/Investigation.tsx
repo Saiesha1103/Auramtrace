@@ -2,7 +2,6 @@ import { useMemo, useState } from 'react';
 import { setExceptionReview, useAppState } from '../data/store';
 import { AS_OF } from '../data/seed';
 import { daysBetween, exceptions, fmtDate, g3, ledger, pct, r3, reconcile, type ExceptionItem } from '../data/calc';
-import { requestAiExplanation } from '../data/api';
 import { useLookups } from '../lookups';
 import { Link, navigate } from '../router';
 import { Btn, Card, DataTable, Empty, FormMessage, KeyValues, Kpi, PageHeader, Pill, SelectFilter, Timeline, Toolbar, statusTone, type TimelineItem } from '../ui';
@@ -74,8 +73,6 @@ function Case({ ex }: { ex: ExceptionItem }) {
   const job = s.jobs.find((j) => j.id === ex.jobId)!;
   const rec = reconcile(s, job);
   const review = s.exceptionReview[ex.id] ?? 'Open';
-  const [ai, setAi] = useState<{ ok: boolean; text: string } | null>(null);
-  const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null);
 
   const timeline: TimelineItem[] = useMemo(() => {
@@ -141,12 +138,6 @@ function Case({ ex }: { ex: ExceptionItem }) {
     return out;
   }, [ex, rec, job, s, docs, partyName]);
 
-  const askAi = async () => {
-    setBusy(true);
-    const res = await requestAiExplanation(ex.id);
-    setAi({ ok: res.ok, text: res.ok ? (res.text || 'Investigation completed.') : (res.error || 'Failed to generate explanation.') });
-    setBusy(false);
-  };
   const setReview = (st: 'Open' | 'Under review' | 'Resolved') => {
     setExceptionReview(ex.id, job.id, st);
     setNote({ ok: true, text: `Marked ${st.toLowerCase()} in this browser session only (local demo — not sent to any server).` });
@@ -220,14 +211,11 @@ function Case({ ex }: { ex: ExceptionItem }) {
             <Empty title="No rule findings for this exception" />
           )}
         </Card>
-        <Card title="AI explanation" className="ai-panel" actions={<Pill tone="warn">Service not connected</Pill>}>
+        <Card title="Investigation agent" className="ai-panel" actions={<Pill tone="gold" icon={null}>Agentic · read-only</Pill>}>
           <p className="muted" style={{ marginTop: 0 }}>
-            An AI explanation would weigh the timeline and evidence and cite them. No AI service is configured for this prototype, so <b>no explanation has been generated</b> and none is shown.
+            The investigation agent works on the server's exception cases. It chooses its own read-only tools step by step (ledger, returns, assays, reconciliation, karigar custody), cites the record behind every fact, and shows each step it took.
           </p>
-          <Btn icon="sparkle" onClick={askAi} disabled={busy}>{busy ? 'Requesting…' : 'Request AI explanation'}</Btn>
-          <div style={{ marginTop: 12 }}>
-            <FormMessage result={ai} />
-          </div>
+          <Btn icon="sparkle" onClick={() => navigate('agents')}>Open AI Agents</Btn>
         </Card>
       </div>
 

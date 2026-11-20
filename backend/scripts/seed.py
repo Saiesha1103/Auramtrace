@@ -54,6 +54,7 @@ from app.schemas import (
 )
 from app.services import (
     ai_investigation,
+    watcher_agent,
     audit,
     custody,
     exceptions,
@@ -85,6 +86,18 @@ KARIGARS = [
     ("S-01", "Shree Casting Works", KarigarKind.subcontractor, "K-01", "Andheri East", ["Lost-wax casting"]),
     ("S-03", "Om Polish & Finish", KarigarKind.subcontractor, "K-02", "Bhuleshwar", ["Finishing"]),
 ]
+
+# karigar self-service logins (role=karigar): each sees only their own account in the portal
+KARIGAR_LOGINS = [
+    ("mahesh@aurumtrace-demo.example.com", "Mahesh Soni", "K-01"),
+    ("farida@aurumtrace-demo.example.com", "Farida Shaikh", "K-02"),
+]
+
+# customer occasion dates the pieces must be ready for
+OCCASIONS = {
+    "J-1190": (date(2026, 11, 22), "Wedding - Desai family"),
+    "J-1186": (date(2026, 11, 27), "Engagement - Mehta family"),
+}
 
 # code, title, karat, pieces, gross/piece, allowance %, head, due
 JOBS = [
@@ -152,6 +165,12 @@ def main() -> int:
             db.flush()
         kar[code] = k
 
+    # Karigar logins
+    for email, name, kcode in KARIGAR_LOGINS:
+        if not db.scalar(select(User).where(User.email == email)):
+            db.add(User(organisation_id=org.id, email=email, full_name=name, role=UserRole.karigar, karigar_id=kar[kcode].id, password_hash=hash_password(DEMO_PASSWORD)))
+            db.flush()
+
     # Jobs
     jobs: dict[str, JobOrder] = {}
     for code, title, karat, pieces, gpp, allow, head, due in JOBS:
@@ -171,6 +190,8 @@ def main() -> int:
                 status=JobStatus.draft,
                 created_by_id=admin.id,
                 contract_version="KC-2026.1",
+                occasion_date=OCCASIONS.get(code, (None, None))[0],
+                occasion_label=OCCASIONS.get(code, (None, None))[1],
             )
             db.add(j)
             db.flush()
@@ -328,6 +349,7 @@ def main() -> int:
         manager,
         MaterialReturnCreate(
             job_id=jobs["J-1160"].id,
+            occurred_at=at(date(2026, 10, 31), 16),
             karigar_id=kar["K-03"].id,
             lot_id=lots["L-3279"].id,
             return_category=ReturnCategory.finished_jewellery,
@@ -346,6 +368,7 @@ def main() -> int:
         manager,
         MaterialReturnCreate(
             job_id=jobs["J-1160"].id,
+            occurred_at=at(date(2026, 10, 31), 16),
             karigar_id=kar["K-01"].id,
             lot_id=lots["L-3279"].id,
             return_category=ReturnCategory.scrap,
@@ -366,6 +389,7 @@ def main() -> int:
         manager,
         MaterialReturnCreate(
             job_id=jobs["J-1168"].id,
+            occurred_at=at(date(2026, 11, 12), 16),
             karigar_id=kar["K-01"].id,
             lot_id=lots["L-3295"].id,
             return_category=ReturnCategory.finished_jewellery,
@@ -385,6 +409,7 @@ def main() -> int:
         manager,
         MaterialReturnCreate(
             job_id=jobs["J-1175"].id,
+            occurred_at=at(date(2026, 11, 7), 16),
             karigar_id=kar["K-01"].id,
             lot_id=lots["L-3288"].id,
             return_category=ReturnCategory.finished_jewellery,
@@ -484,7 +509,10 @@ def main() -> int:
     )
     settlements.submit_settlement_worksheet(db, manager, ws1)
     settlements.approve_settlement_worksheet(db, admin, ws1, SettlementApproveRequest(notes="Approved for treasury disbursement"))
-    jobs["J-1160"].status = JobStatus.settled
+    # J-1160 now waits for Mahesh Soni (K-01) to accept or dispute it from the karigar portal.
+
+    # 10. Proactive watcher agent: deadlines, customer occasion dates, unpaid karigars
+    watcher_agent.run_watcher(db, manager, horizon_days=7)
 
     db.commit()
     print(f"Seeded '{ORG_NAME}' with comprehensive Phase 1 & Phase 2 data:")
@@ -494,7 +522,8 @@ def main() -> int:
     print(f"  - Finished jewellery, scrap, and assay shortfall returns")
     print(f"  - 4 Reconciled jobs: within allowance, above allowance, fineness mismatch, unacknowledged transfer")
     print(f"  - Exception lifecycle: open, investigating, resolved, with AI investigation run and evidence links")
-    print(f"  - Commercial settlement rules and approved settlement worksheet for J-1160")
+    print(f"  - Commercial settlement rules; J-1160 worksheet approved by the jeweller, awaiting the karigar")
+    print(f"  - Karigar portal logins for K-01 and K-02; occasion dates on J-1190 and J-1186; one watcher agent run")
     print("Demo logins: see USERS / DEMO_PASSWORD in scripts/seed.py (synthetic, development only).")
     return 0
 

@@ -353,9 +353,9 @@ def test_approval_controls_draft_self_and_unauthorized(client, admin, make_user)
     assert r_ok.status_code == 200
     assert r_ok.json()["status"] == "approved"
 
-    # Job status transitioned to settled
+    # Jeweller approval alone does not settle the job: the karigar must accept it (two-party approval)
     j_check = client.get(f"/api/v1/jobs/{job['id']}", headers=h_admin).json()
-    assert j_check["status"] == "settled"
+    assert j_check["status"] != "settled"
 
 
 def test_monetary_values_quantized_to_paise(client, admin):

@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from ..database import Base
 from ..errors import AppendOnlyViolation
 from .entities import (
+    AgentRun,
     AuditEvent,
     ExceptionCase,
     ExceptionEvidence,
@@ -50,6 +51,7 @@ from .enums import (
     ReturnCategory,
     SettlementStatus,
     UserRole,
+    STAFF_ROLES,
 )
 
 APPEND_ONLY_TABLES = ("material_events", "audit_events")
@@ -120,6 +122,8 @@ __all__ = [
     "InvestigationRun",
     "SettlementRule",
     "SettlementWorksheet",
+    "AgentRun",
+    "STAFF_ROLES",
     "UserRole",
     "KarigarKind",
     "KarigarStatus",

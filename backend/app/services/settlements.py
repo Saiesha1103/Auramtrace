@@ -237,10 +237,7 @@ def approve_settlement_worksheet(db: Session, user: User, worksheet: SettlementW
     worksheet.approved_at = utcnow()
     if req.notes:
         worksheet.notes = f"{worksheet.notes or ''}\nApproval notes: {req.notes}".strip()
-
-    job = db.get(JobOrder, worksheet.job_id)
-    if job:
-        job.status = JobStatus.settled
+    # The job is NOT settled yet: the karigar must accept (or dispute) the worksheet from their portal.
 
     db.flush()
     audit.record(
@@ -258,7 +255,7 @@ def approve_settlement_worksheet(db: Session, user: User, worksheet: SettlementW
 def reject_settlement_worksheet(db: Session, user: User, worksheet: SettlementWorksheet, req: SettlementRejectRequest) -> SettlementWorksheet:
     if user.role not in (UserRole.admin, UserRole.manager):
         raise Forbidden("Only an Admin or Manager can reject settlements", code="unauthorized_rejection")
-    if worksheet.status not in (SettlementStatus.draft, SettlementStatus.submitted):
+    if worksheet.status not in (SettlementStatus.draft, SettlementStatus.submitted, SettlementStatus.disputed):
         raise BusinessRuleViolation(f"Worksheet in status '{worksheet.status.value}' cannot be rejected", code="invalid_status")
 
     worksheet.status = SettlementStatus.rejected
@@ -283,3 +280,59 @@ def list_settlement_worksheets(db: Session, org_id: uuid.UUID, job_id: uuid.UUID
     if karigar_id:
         stmt = stmt.where(SettlementWorksheet.karigar_id == karigar_id)
     return list(db.scalars(stmt.order_by(SettlementWorksheet.created_at.desc())))
+
+
+# ------------------------------------------------------------------ second party: the karigar
+
+
+def _own_worksheet(user: User, worksheet: SettlementWorksheet) -> None:
+    if user.role != UserRole.karigar or user.karigar_id != worksheet.karigar_id or user.organisation_id != worksheet.organisation_id:
+        # same answer as a missing record, so karigars cannot probe each other's worksheets
+        raise NotFound("Settlement worksheet not found")
+
+
+def karigar_accept_worksheet(db: Session, user: User, worksheet: SettlementWorksheet, note: str | None = None) -> SettlementWorksheet:
+    """The karigar signs off the jeweller-approved settlement. Only now is the job settled."""
+    _own_worksheet(user, worksheet)
+    if worksheet.status != SettlementStatus.approved:
+        raise BusinessRuleViolation(f"Worksheet in status '{worksheet.status.value}' is not awaiting your response", code="invalid_status")
+    worksheet.status = SettlementStatus.karigar_accepted
+    worksheet.karigar_response_by_id = user.id
+    worksheet.karigar_response_at = utcnow()
+    if note:
+        worksheet.notes = f"{worksheet.notes or ''}\nKarigar note: {note}".strip()
+    job = db.get(JobOrder, worksheet.job_id)
+    if job:
+        job.status = JobStatus.settled
+    db.flush()
+    audit.record(db, user, worksheet.organisation_id, "settlement.karigar_accepted", "settlement_worksheet", worksheet.id, {"code": worksheet.code, "netPayable": float(worksheet.net_payable_amount)})
+    return worksheet
+
+
+def karigar_dispute_worksheet(db: Session, user: User, worksheet: SettlementWorksheet, reason: str) -> SettlementWorksheet:
+    """The karigar disagrees. The worksheet goes back to the jeweller with the karigar's reason on record."""
+    _own_worksheet(user, worksheet)
+    if worksheet.status != SettlementStatus.approved:
+        raise BusinessRuleViolation(f"Worksheet in status '{worksheet.status.value}' is not awaiting your response", code="invalid_status")
+    worksheet.status = SettlementStatus.disputed
+    worksheet.karigar_response_by_id = user.id
+    worksheet.karigar_response_at = utcnow()
+    worksheet.dispute_reason = reason
+    db.flush()
+    audit.record(db, user, worksheet.organisation_id, "settlement.karigar_disputed", "settlement_worksheet", worksheet.id, {"code": worksheet.code, "reason": reason})
+    return worksheet
+
+
+def mark_worksheet_paid(db: Session, user: User, worksheet: SettlementWorksheet, payment_ref: str, paid_at=None) -> SettlementWorksheet:
+    """Record payment to the karigar. Only possible once BOTH parties have agreed."""
+    if user.role not in (UserRole.admin, UserRole.manager):
+        raise Forbidden("Only an Admin or Manager can record a payment", code="unauthorized_payment")
+    if worksheet.status != SettlementStatus.karigar_accepted:
+        raise BusinessRuleViolation(f"Worksheet in status '{worksheet.status.value}' cannot be paid; the karigar must accept it first", code="invalid_status")
+    worksheet.status = SettlementStatus.paid
+    worksheet.paid_by_id = user.id
+    worksheet.paid_at = paid_at or utcnow()
+    worksheet.payment_ref = payment_ref
+    db.flush()
+    audit.record(db, user, worksheet.organisation_id, "settlement.paid", "settlement_worksheet", worksheet.id, {"code": worksheet.code, "paymentRef": payment_ref, "amount": float(worksheet.net_payable_amount)})
+    return worksheet

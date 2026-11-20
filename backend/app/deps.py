@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from .database import get_db
 from .errors import Forbidden, Unauthorized
-from .models import User, UserRole
+from .models import STAFF_ROLES, User, UserRole
 from .services.security import decode_access_token
 
 bearer = HTTPBearer(auto_error=False, description="Paste the accessToken from POST /api/v1/auth/login")
@@ -19,7 +19,8 @@ bearer = HTTPBearer(auto_error=False, description="Paste the accessToken from PO
 DB = Annotated[Session, Depends(get_db)]
 
 
-def get_current_user(db: DB, creds: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer)]) -> User:
+def get_authenticated_user(db: DB, creds: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer)]) -> User:
+    """Any signed-in user, staff or karigar. Only /auth/me and /portal/* accept karigar logins."""
     if creds is None or creds.scheme.lower() != "bearer":
         raise Unauthorized("Authentication required")
     try:
@@ -33,7 +34,27 @@ def get_current_user(db: DB, creds: Annotated[HTTPAuthorizationCredentials | Non
     return user
 
 
+AnyUser = Annotated[User, Depends(get_authenticated_user)]
+
+
+def get_current_user(user: AnyUser) -> User:
+    """Jeweller staff only. Deny-by-default for karigar logins: a karigar can never reach an
+    organisation-wide endpoint, only their own account through /portal."""
+    if user.role not in STAFF_ROLES:
+        raise Forbidden("Karigar accounts can only use the karigar portal", code="staff_only")
+    return user
+
+
 CurrentUser = Annotated[User, Depends(get_current_user)]
+
+
+def get_karigar_user(user: AnyUser) -> User:
+    if user.role != UserRole.karigar or user.karigar_id is None:
+        raise Forbidden("This endpoint is for karigar accounts", code="karigar_only")
+    return user
+
+
+KarigarUser = Annotated[User, Depends(get_karigar_user)]
 
 
 def require_roles(*roles: UserRole) -> Callable[[User], User]:

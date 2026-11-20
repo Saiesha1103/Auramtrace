@@ -67,6 +67,8 @@ class User(Base):
     role: Mapped[UserRole] = mapped_column(str_enum(UserRole), nullable=False)
     password_hash: Mapped[str] = mapped_column(String(120), nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    # set only for role=karigar: the one karigar account this login may see
+    karigar_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("karigars.id", ondelete="RESTRICT"), nullable=True, unique=True)
     created_at: Mapped[datetime] = created_at_col()
 
     organisation: Mapped[Organisation] = relationship(back_populates="users")
@@ -120,6 +122,9 @@ class JobOrder(Base):
     head_karigar_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("karigars.id", ondelete="RESTRICT"), index=True)
     parent_job_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("job_orders.id", ondelete="RESTRICT"), nullable=True, index=True)
     due_date: Mapped[date] = mapped_column(Date, nullable=False)
+    # the customer's fixed date (wedding, festival...) this piece must be ready for
+    occasion_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    occasion_label: Mapped[str | None] = mapped_column(String(80))
     notes: Mapped[str | None] = mapped_column(Text)
     status: Mapped[JobStatus] = mapped_column(str_enum(JobStatus), default=JobStatus.draft, nullable=False)
     created_by_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"), nullable=False)
@@ -597,6 +602,16 @@ class SettlementWorksheet(Base):
     approved_by_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"))
     approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
+    # second party: the karigar's own acceptance or dispute
+    karigar_response_by_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"))
+    karigar_response_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    dispute_reason: Mapped[str | None] = mapped_column(Text)
+
+    # payment to the karigar
+    paid_by_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"))
+    paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    payment_ref: Mapped[str | None] = mapped_column(String(120))
+
     created_by_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"), nullable=False)
     created_at: Mapped[datetime] = created_at_col()
 
@@ -608,3 +623,19 @@ class SettlementWorksheet(Base):
     approved_by: Mapped[User | None] = relationship(foreign_keys=[approved_by_id])
     created_by: Mapped[User] = relationship(foreign_keys=[created_by_id])
 
+
+
+class AgentRun(Base):
+    """One run of a proactive agent (e.g. the deadline & payment watcher), with its tool trace.
+    Output is advisory only: alerts and draft messages for a person to review and send."""
+
+    __tablename__ = "agent_runs"
+
+    id: Mapped[uuid.UUID] = uuid_pk()
+    organisation_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organisations.id", ondelete="RESTRICT"), nullable=False, index=True)
+    kind: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
+    provider: Mapped[str] = mapped_column(String(60), nullable=False)
+    output_json: Mapped[dict] = mapped_column(JSON, nullable=False)
+    trace_json: Mapped[list] = mapped_column(JSON, nullable=False)
+    created_by_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"), nullable=False)
+    created_at: Mapped[datetime] = created_at_col()

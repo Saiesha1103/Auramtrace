@@ -7,7 +7,7 @@ import type { IconName } from '../components/Icon';
  */
 export type PageKey =
   | 'dashboard' | 'karigars' | 'jobs' | 'issuance' | 'transfers' | 'production'
-  | 'returns' | 'reconciliation' | 'investigation' | 'settlement' | 'reports';
+  | 'returns' | 'reconciliation' | 'investigation' | 'agents' | 'settlement' | 'reports';
 
 export const PAGES: { key: PageKey; label: string; icon: IconName; group: 'Overview' | 'Custody' | 'Control' }[] = [
   { key: 'dashboard', label: 'Dashboard', icon: 'grid', group: 'Overview' },
@@ -18,7 +18,8 @@ export const PAGES: { key: PageKey; label: string; icon: IconName; group: 'Overv
   { key: 'production', label: 'Production', icon: 'manufacture', group: 'Custody' },
   { key: 'returns', label: 'Returns', icon: 'return', group: 'Custody' },
   { key: 'reconciliation', label: 'Reconciliation', icon: 'scale', group: 'Control' },
-  { key: 'investigation', label: 'AI Investigation', icon: 'sparkle', group: 'Control' },
+  { key: 'investigation', label: 'Exceptions', icon: 'search', group: 'Control' },
+  { key: 'agents', label: 'AI Agents', icon: 'sparkle', group: 'Control' },
   { key: 'settlement', label: 'Settlement', icon: 'shield', group: 'Control' },
   { key: 'reports', label: 'Reports & Audit', icon: 'layers', group: 'Control' },
 ];

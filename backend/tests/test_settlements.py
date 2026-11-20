@@ -143,9 +143,9 @@ def test_settlement_worksheet_calculation_and_approval(client, settle_world, mak
     assert approved["status"] == "approved"
     assert approved["approvedAt"] is not None
 
-    # Job status updated to settled
+    # Jeweller approval alone does not settle the job: the karigar must accept it (two-party approval)
     job = client.get(f"/api/v1/jobs/{w['job']['id']}", headers=admin_h).json()
-    assert job["status"] == "settled"
+    assert job["status"] != "settled"
 
 
 def test_settlement_rejection(client, settle_world):

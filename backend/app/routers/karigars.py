@@ -7,6 +7,7 @@ from ..deps import DB, CurrentUser, Manager
 from ..errors import BusinessRuleViolation
 from ..models import Karigar, KarigarKind, KarigarStatus
 from ..schemas import ERROR_RESPONSES, HierarchyNode, KarigarCreate, KarigarOut, KarigarProfile, KarigarUpdate, Page
+from ..services.track_record import track_record
 from ..services import audit
 from ..services.codes import ensure_unique_code, next_code
 from ..services.custody import get_in_org
@@ -105,3 +106,8 @@ def update_karigar(karigar_id: uuid.UUID, body: KarigarUpdate, user: Manager, db
         audit.record(db, user, user.organisation_id, "karigar.updated", "karigar", k.id, diff)
     db.commit()
     return KarigarOut.model_validate(k)
+
+
+@router.get("/{karigar_id}/track-record", summary="Delivery, wastage, dispute and payment record, derived live from the ledger")
+def get_track_record(karigar_id: uuid.UUID, user: CurrentUser, db: DB) -> dict:
+    return track_record(db, user.organisation_id, karigar_id)

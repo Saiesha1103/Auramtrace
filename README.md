@@ -17,16 +17,21 @@ The backend runs on Render's free tier, so the first request after it has been i
 - **Custody ledger:** issuance, full, partial and split transfers, and returns, each with a challan reference and receiver acknowledgement
 - **Production tracking:** Alloying → Casting → Filing → Setting → Polishing → QC
 - **Reconciliation:** fine gold = net metal × fineness, in `Decimal` to 0.001 g. Assayed fineness overrides declared fineness.
-- **Exceptions and AI investigation:** custody timeline, linked evidence, explanation, then manager review
-- **Settlement:** labour minus recovery for excess wastage, with an approval workflow
+- **Agentic AI (read-only, human-in-the-loop):**
+  - *Investigation agent:* plans its own steps over 12 read-only tools (ledger, returns, assays, reconciliation, karigar custody), cites the record behind every fact, and drops any claim citing a record it never read
+  - *Deadline & payment watcher:* flags jobs at risk against due dates and the customer's occasion date (wedding, engagement), and karigars waiting to be paid, then drafts WhatsApp messages for a person to review. It never sends anything.
+  - Every tool call is saved as a trace and shown in the UI. Agents cannot move gold, approve settlements or send messages. Gemini function calling is used when configured; otherwise a deterministic planner runs the same loop.
+- **Karigar portal:** each karigar signs in to see their own gold ledger, jobs, settlements and track record, and confirms receipt of gold issued to them. Karigar logins are denied every organisation-wide endpoint.
+- **Two-party settlement:** draft → submitted → approved by the jeweller (four-eyes) → **accepted or disputed by the karigar** → paid. A job is settled only when the karigar accepts, and payment can be recorded only after that.
+- **Karigar track record:** on-time delivery, occasion dates kept, wastage within allowance, disputes and average days to payment, all derived from the ledger rather than self-reported
 - **Append-only ledger:** database triggers block edits and deletes; corrections are made by reversal entries
-- **Auth and roles:** JWT with bcrypt, and four roles: admin, manager, vault operator, viewer
+- **Auth and roles:** JWT with bcrypt; staff roles admin, manager, vault operator, viewer, plus a `karigar` self-service role
 
 ## Stack
 
 - **Frontend:** React 19, TypeScript, Vite, Three.js (React Three Fiber), GSAP, deployed on Vercel
 - **Backend:** Python, FastAPI, SQLAlchemy, Alembic, PostgreSQL, deployed on Render
-- **AI:** pluggable provider: deterministic by default, Gemini when configured
+- **AI:** a bounded tool-calling agent runtime (`backend/app/services/agent_runtime.py`). It uses Gemini function calling when `AURUM_AI_PROVIDER=gemini` and `AURUM_GEMINI_API_KEY` are set, and otherwise a deterministic rule-based planner. If the LLM fails, it falls back to that planner automatically.
 
 ## Run locally
 
@@ -41,10 +46,11 @@ Backend: see [backend/README.md](backend/README.md) for setup, migrations and se
 
 ## Tests
 
-The backend has 105 automated tests in 17 files, covering:
+The backend has 117 automated tests in 18 files, covering:
 
 - fine-gold maths
 - issuance, transfers, production, returns, reconciliation and settlements
+- the agent loop (tool validation, organisation isolation, grounding, step limit, LLM fallback, Gemini wire format), the watcher agent, the karigar portal and two-party settlement
 - auth and permissions
 - the security audit
 - the append-only ledger

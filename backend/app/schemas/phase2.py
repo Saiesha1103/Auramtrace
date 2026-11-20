@@ -494,6 +494,10 @@ class SettlementWorksheetOut(CamelModel):
     rejection_reason: str | None
     submitted_at: UtcDateTime | None
     approved_at: UtcDateTime | None
+    karigar_response_at: UtcDateTime | None = None
+    dispute_reason: str | None = None
+    paid_at: UtcDateTime | None = None
+    payment_ref: str | None = None
     created_at: UtcDateTime
 
 
@@ -503,3 +507,16 @@ class SettlementApproveRequest(CamelModel):
 
 class SettlementRejectRequest(CamelModel):
     reason: str = Field(min_length=4, max_length=1000)
+
+
+class KarigarAcceptRequest(CamelModel):
+    note: str | None = Field(default=None, max_length=1000)
+
+
+class KarigarDisputeRequest(CamelModel):
+    reason: str = Field(min_length=10, max_length=2000, examples=["My scale showed 18.420 g returned, not 18.240 g; challan JWC-26-3301 attached"])
+
+
+class SettlementPaidRequest(CamelModel):
+    payment_ref: str = Field(min_length=2, max_length=120, examples=["UPI 4417 2291 8830"])
+    paid_at: datetime | None = None

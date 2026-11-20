@@ -107,7 +107,9 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     let errMessage = `API request failed with status ${res.status}`;
     try {
       const body = await res.json();
-      if (body.detail) {
+      if (body.error?.message) {
+        errMessage = body.error.message;
+      } else if (body.detail) {
         if (typeof body.detail === 'string') {
           errMessage = body.detail;
         } else if (Array.isArray(body.detail)) {
@@ -638,3 +640,138 @@ export async function requestAiExplanation(exceptionId: string): Promise<AiExpla
     };
   }
 }
+
+/* ------------------------------------------------------------------ Agents, karigar portal, two-party settlement */
+
+export interface AgentTraceStep {
+  step?: number;
+  type: 'tool_call' | 'final' | 'llm_failed';
+  tool?: string;
+  args?: Record<string, unknown>;
+  ok?: boolean;
+  summary?: string;
+  error?: string;
+}
+
+export interface WatchAlert {
+  kind: 'deadline' | 'payment' | 'dispute';
+  severity: 'critical' | 'high' | 'medium';
+  title: string;
+  detail: string;
+  recordId: string;
+  karigarId: string | null;
+}
+
+export interface DraftMessage {
+  audience: 'karigar' | 'jeweller' | 'customer';
+  karigarId: string | null;
+  recordId: string;
+  channel: string;
+  text: string;
+}
+
+export interface AgentRun {
+  id: string;
+  kind: string;
+  provider: string;
+  output: {
+    summary: string;
+    alerts: WatchAlert[];
+    draftMessages: DraftMessage[];
+    limitations: string[];
+    agent: { planner: string; toolCalls: number; toolsUsed: string[]; horizonDays: number };
+  };
+  trace: AgentTraceStep[];
+  createdAt: string;
+}
+
+export interface WorksheetDto {
+  id: string;
+  code: string;
+  jobId: string;
+  karigarId: string;
+  status: 'draft' | 'submitted' | 'approved' | 'karigar_accepted' | 'disputed' | 'paid' | 'rejected';
+  finishedGrossG: number;
+  labourAmount: number;
+  wastageAllowanceFineG: number;
+  actualLossFineG: number;
+  excessLossFineG: number;
+  goldRecoveryAmount: number;
+  approvedDeductions: number;
+  netPayableAmount: number;
+  notes: string | null;
+  rejectionReason: string | null;
+  disputeReason: string | null;
+  approvedAt: string | null;
+  karigarResponseAt: string | null;
+  paidAt: string | null;
+  paymentRef: string | null;
+  createdAt: string;
+}
+
+export interface TrackRecord {
+  karigarId: string;
+  code: string;
+  name: string;
+  jobsTotal: number;
+  jobsDelivered: number;
+  onTimeDeliveries: number;
+  onTimeRatePct: number | null;
+  occasionJobsDelivered: number;
+  occasionDatesKept: number;
+  reconciledJobs: number;
+  withinWastageAllowance: number;
+  withinAllowanceRatePct: number | null;
+  averageVariancePct: number | null;
+  settlements: number;
+  settlementsDisputed: number;
+  settlementsPaid: number;
+  averageDaysToPayment: number | null;
+  awaitingPayment: { worksheetId: string; code: string; status: string; amount: number; daysWaiting: number }[];
+  exceptionsOpen: number;
+  exceptionsTotal: number;
+  fineGoldHeldG: number;
+  basis: string;
+}
+
+export interface PortalEvent {
+  id: string;
+  eventType: string;
+  jobId?: string | null;
+  jobCode?: string | null;
+  lotCode?: string | null;
+  netWeightG?: number | null;
+  fineGoldG?: number | null;
+  challanRef?: string | null;
+  recordedAt: string;
+  isAcknowledged?: boolean;
+  isReversed?: boolean;
+  to?: { type: string; karigarId?: string | null } | null;
+  [k: string]: unknown;
+}
+
+export const apiGet = <T,>(path: string) => request<T>(path);
+export const apiPost = <T,>(path: string, body: unknown = {}) => request<T>(path, { method: 'POST', body: JSON.stringify(body) });
+
+export const agentsApi = {
+  watch: (horizonDays = 7) => apiPost<AgentRun>('/agents/watch', { horizonDays }),
+  runs: () => apiGet<{ items: AgentRun[] }>('/agents/runs?limit=10'),
+  exceptions: () => apiGet<{ items: any[] }>('/exceptions?limit=50'),
+  detect: () => apiPost<any[]>('/exceptions/detect'),
+  investigate: (exceptionId: string) => apiPost<any>('/investigations/run', { exceptionId }),
+  karigars: () => apiGet<{ items: { id: string; code: string; name: string }[] }>('/karigars?limit=200'),
+  jobs: () => apiGet<{ items: { id: string; code: string; title: string }[] }>('/jobs?limit=200'),
+  trackRecord: (karigarId: string) => apiGet<TrackRecord>(`/karigars/${karigarId}/track-record`),
+  worksheets: () => apiGet<{ items: WorksheetDto[] }>('/settlements/worksheets?limit=100'),
+  markPaid: (id: string, paymentRef: string) => apiPost<WorksheetDto>(`/settlements/worksheets/${id}/mark-paid`, { paymentRef }),
+};
+
+export const portalApi = {
+  me: () => apiGet<{ fullName: string; email: string; karigar: any; trackRecord: TrackRecord }>('/portal/me'),
+  jobs: () => apiGet<any[]>('/portal/jobs'),
+  ledger: () => apiGet<PortalEvent[]>('/portal/ledger'),
+  settlements: () => apiGet<WorksheetDto[]>('/portal/settlements'),
+  accept: (id: string, note?: string) => apiPost<WorksheetDto>(`/portal/settlements/${id}/accept`, { note }),
+  dispute: (id: string, reason: string) => apiPost<WorksheetDto>(`/portal/settlements/${id}/dispute`, { reason }),
+  acknowledge: (eventId: string, evidenceRef?: string) => apiPost<PortalEvent>(`/portal/events/${eventId}/acknowledge`, { evidenceRef }),
+};

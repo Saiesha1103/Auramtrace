@@ -7,6 +7,7 @@ from . import __version__
 from .config import get_settings
 from .errors import install_error_handlers
 from .routers import (
+    agents,
     auth,
     events,
     exceptions,
@@ -15,6 +16,7 @@ from .routers import (
     karigars,
     lots,
     organisations,
+    portal,
     production,
     reconciliations,
     returns,
@@ -74,6 +76,8 @@ def create_app() -> FastAPI:
         exceptions.router,
         investigations.router,
         settlements.router,
+        agents.router,
+        portal.router,
     ):
         app.include_router(r, prefix=API_PREFIX)
 

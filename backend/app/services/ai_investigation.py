@@ -43,6 +43,7 @@ from . import audit
 from .custody import get_in_org
 from .fine_gold import fine_gold
 from .ledger import followups, job_holdings, job_issued_total, lot_balances
+from .agent_runtime import AgentResult, GeminiPlanner, Planner, RulePlanner, Tool, ToolParam, run_agent
 
 
 # ------------------------------------------------------------------ 12 READ-ONLY TOOLS
@@ -469,106 +470,217 @@ class DeterministicEvidenceAiProvider:
         }
 
 
-class GeminiAiProvider:
-    """External Google Gemini AI provider for grounded investigation summaries.
+# ------------------------------------------------------------------ AGENT: TOOL REGISTRY
 
-    Uses structured JSON responses, strictly read-only inspection context,
-    and grounds assertions against verified database records.
-    """
 
-    def __init__(self, api_key: str, model: str = "gemini-2.5-flash"):
-        self.api_key = api_key
-        self.model = model
+def _p(name: str, desc: str) -> ToolParam:
+    return ToolParam(name, "uuid", desc)
 
-    def investigate(self, context: dict[str, Any]) -> dict[str, Any]:
-        import httpx
 
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:generateContent?key={self.api_key}"
-        system_instruction = (
-            "You are an expert forensic goldsmith auditor and AI investigation assistant for AURUMTRACE. "
-            "Analyze the provided workshop facts, ledger events, assay measurements, and reconciliation data. "
-            "You are STRICTLY READ-ONLY. You cannot alter balances, cancel records, or approve transactions. "
-            "Every verified fact and evidence item MUST be grounded in the provided database record IDs. "
-            "Return valid JSON matching this schema: "
-            "{ 'exceptionId': str, 'jobId': str, 'summary': str, 'verifiedFacts': list, 'suspectedCauses': list, "
-            "'calculationBreakdown': dict, 'evidence': list, 'missingEvidence': list, 'recommendedActions': list, "
-            "'confidence': float, 'limitations': list, 'generatedAt': str }"
-        )
-        payload = {
-            "contents": [
-                {
-                    "role": "user",
-                    "parts": [{"text": f"System: {system_instruction}\n\nEvidence Context:\n{json.dumps(context, indent=2)}"}]
-                }
-            ],
-            "generationConfig": {
-                "responseMimeType": "application/json",
-                "temperature": 0.1,
-            }
+_JOB = _p("job_id", "UUID of the job order")
+
+INVESTIGATION_TOOLS: list[Tool] = [
+    Tool("get_exception_details", "The exception case being investigated: type, severity, expected vs observed values, linked job/karigar/lot ids.", (_p("exception_id", "UUID of the exception case"),), tool_get_exception_details),
+    Tool("get_job_summary", "Job order spec: karat, target fineness, pieces, contractual loss allowance %, due date, head karigar.", (_JOB,), tool_get_job_summary),
+    Tool("get_job_ledger", "Every custody movement (issue, transfer, return, reversal) on the job, with weights, fineness, challan refs and acknowledgement state.", (_JOB,), tool_get_job_ledger),
+    Tool("get_transfer_history", "Only karigar-to-karigar transfers on the job and whether each was acknowledged.", (_JOB,), tool_get_transfer_history),
+    Tool("get_material_returns", "Returns to vault (finished jewellery, scrap, dust, WIP) with declared vs assayed fineness.", (_JOB,), tool_get_material_returns),
+    Tool("get_production_measurements", "Stage-by-stage production weighings (casting, filing, polishing...) including superseded corrections.", (_JOB,), tool_get_production_measurements),
+    Tool("compare_measurements", "Net metal loss per production stage, to find where weight disappeared.", (_JOB,), tool_compare_measurements),
+    Tool("get_reconciliation", "Latest fine-gold reconciliation bridge for the job: issued, accounted, allowance, unexplained variance.", (_JOB,), tool_get_reconciliation),
+    Tool("calculate_fine_gold_balance", "Fine gold issued on the job and what each karigar still holds right now.", (_JOB,), tool_calculate_fine_gold_balance),
+    Tool("get_material_event_history", "Alias of get_job_ledger.", (_JOB,), tool_get_material_event_history),
+    Tool("trace_karigar_custody", "Total gold a karigar currently holds across all jobs.", (_p("karigar_id", "UUID of the karigar"),), tool_trace_karigar_custody),
+    Tool("trace_material_lot", "A gold lot's origin, fineness and where its balance sits now.", (_p("lot_id", "UUID of the material lot"),), tool_trace_material_lot),
+]
+
+INVESTIGATION_SYSTEM = (
+    "You are the AURUMTRACE investigation agent, a forensic gold-custody auditor for a jeweller and the karigars "
+    "(artisan goldsmiths) who work for them. Both parties will read your findings, so be fair and factual.\n"
+    "Work step by step: call the read-only tools to gather evidence, look at what you got, and call more tools "
+    "until you can explain the exception. Start with get_exception_details. Do not guess numbers: every fact must "
+    "come from a tool result and cite the database record id it came from.\n"
+    "You are STRICTLY READ-ONLY. You cannot change balances, approve settlements or resolve cases; you only recommend.\n"
+    "When you are done, reply with ONLY a JSON object (no tool call) with keys: summary (str), verifiedFacts "
+    "[{fact, evidenceRef, recordId, field, observedValue}], suspectedCauses [{cause, probability 0-1, rationale}], "
+    "calculationBreakdown {issuedFineG, actualAccountedFineG, lossAllowanceFineG, unexplainedVarianceFineG, variancePct}, "
+    "evidence [{evidenceType, recordId, field, observedValue, explanation}], missingEvidence [{description, suggestedSource}], "
+    "recommendedActions [{action, role, priority}], confidence (0-1), limitations [str]."
+)
+
+
+# ------------------------------------------------------------------ AGENT: RULE PLANNER
+
+
+def _investigation_rule_planner(exception_id: uuid.UUID) -> RulePlanner:
+    """Deterministic investigator: picks the next tools from what it has already seen."""
+
+    def decide(seen: dict[str, Any]) -> list[tuple[str, dict[str, Any]]] | None:
+        if "get_exception_details" not in seen:
+            return [("get_exception_details", {"exception_id": str(exception_id)})]
+        ex = seen["get_exception_details"]
+        job = {"job_id": ex["jobId"]}
+        if "get_job_summary" not in seen:
+            return [("get_job_summary", job), ("get_reconciliation", job)]
+        ex_type = ex["type"]
+        wanted: list[str]
+        if ex_type == ExceptionType.purity_mismatch.value:
+            wanted = ["get_material_returns"]
+        elif ex_type in (ExceptionType.variance.value, ExceptionType.unexpected_loss.value, ExceptionType.weight_discrepancy.value):
+            wanted = ["get_production_measurements", "compare_measurements", "get_material_returns"]
+        elif ex_type in (ExceptionType.unacknowledged_transfer.value, ExceptionType.unacknowledged_issue.value):
+            wanted = ["get_transfer_history", "get_job_ledger"]
+        else:
+            wanted = ["calculate_fine_gold_balance", "get_job_ledger"]
+        missing = [t for t in wanted if t not in seen]
+        if missing:
+            return [(t, job) for t in missing]
+        if ex.get("karigarId") and "trace_karigar_custody" not in seen:
+            return [("trace_karigar_custody", {"karigar_id": ex["karigarId"]})]
+        # make sure the composer has the core context
+        core = [t for t in ("get_job_ledger", "get_material_returns", "get_production_measurements") if t not in seen]
+        if core:
+            return [(t, job) for t in core]
+        return None
+
+    def finalize(seen: dict[str, Any]) -> dict[str, Any]:
+        context = {
+            "exception": seen["get_exception_details"],
+            "job": seen["get_job_summary"],
+            "ledger": seen.get("get_job_ledger") or [],
+            "returns": seen.get("get_material_returns") or [],
+            "measurements": seen.get("get_production_measurements") or [],
+            "reconciliation": seen.get("get_reconciliation"),
         }
-        try:
-            with httpx.Client(timeout=15.0) as client:
-                res = client.post(url, json=payload)
-                res.raise_for_status()
-                data = res.json()
-                text = data["candidates"][0]["content"]["parts"][0]["text"]
-                parsed = json.loads(text)
-                return parsed
-        except Exception as e:
-            logger.warning("Gemini AI API call failed or timed out: %s; falling back to deterministic provider", str(e))
-            raise
+        out = DeterministicEvidenceAiProvider().investigate(context)
+        out["limitations"][0] = "Analysis performed by the deterministic rule-based planner over read-only tool results (no LLM)."
+        return out
+
+    return RulePlanner(decide, finalize)
+
+
+# ------------------------------------------------------------------ AGENT: GROUNDING CHECK
+
+
+def _collect_ids(value: Any, into: set[str]) -> None:
+    if isinstance(value, dict):
+        for v in value.values():
+            _collect_ids(v, into)
+    elif isinstance(value, list):
+        for v in value:
+            _collect_ids(v, into)
+    elif isinstance(value, str) and len(value) == 36:
+        into.add(value.lower())
+
+
+def _ground(final: dict[str, Any], observations: list[tuple[str, dict[str, Any], Any]]) -> tuple[dict[str, Any], int]:
+    """Drop any fact/evidence whose recordId the agent never actually observed. Returns (final, dropped)."""
+    seen_ids: set[str] = set()
+    for _, args, value in observations:
+        _collect_ids(value, seen_ids)
+        _collect_ids(args, seen_ids)
+    dropped = 0
+    for key in ("verifiedFacts", "evidence"):
+        items = final.get(key)
+        if not isinstance(items, list):
+            final[key] = []
+            continue
+        kept = [i for i in items if isinstance(i, dict) and str(i.get("recordId", "")).lower() in seen_ids]
+        dropped += len(items) - len(kept)
+        final[key] = kept
+    for key in ("suspectedCauses", "missingEvidence", "recommendedActions", "limitations"):
+        if not isinstance(final.get(key), list):
+            final[key] = []
+    if not isinstance(final.get("calculationBreakdown"), dict):
+        final["calculationBreakdown"] = {}
+    if dropped:
+        final["limitations"].append(f"{dropped} statement(s) were removed because they cited records the agent never retrieved.")
+    return final, dropped
 
 
 # ------------------------------------------------------------------ INVESTIGATION RUNNER
 
 
-def run_investigation(db: Session, user: User, exception_id: uuid.UUID) -> InvestigationRun:
-    """Executes an AI investigation for an exception using read-only tools and records the result."""
+def _make_llm_planner() -> Planner | None:
+    s = get_settings()
+    if s.ai_provider == "gemini" and s.gemini_api_key:
+        return GeminiPlanner(api_key=s.gemini_api_key, model=s.gemini_model)
+    return None
+
+
+def run_investigation(db: Session, user: User, exception_id: uuid.UUID, planner: Planner | None = None) -> InvestigationRun:
+    """Runs the investigation agent for an exception and records the result and its full tool trace."""
     org = user.organisation_id
     case = get_in_org(db, ExceptionCase, org, exception_id, "Exception case")
     job = get_in_org(db, JobOrder, org, case.job_id, "Job")
+    goal = (
+        f"Investigate exception case {case.code} (id {case.id}, type {case.exception_type.value}) on job {job.code} "
+        f"(id {job.id}). Find the root cause and what evidence is still missing."
+    )
 
-    # Collect data strictly through read-only tools
-    context = {
-        "exception": tool_get_exception_details(db, org, case.id),
-        "job": tool_get_job_summary(db, org, job.id),
-        "ledger": tool_get_job_ledger(db, org, job.id),
-        "returns": tool_get_material_returns(db, org, job.id),
-        "measurements": tool_get_production_measurements(db, org, job.id),
-        "reconciliation": tool_get_reconciliation(db, org, job.id),
-    }
+    llm = planner or _make_llm_planner()
+    response_data: dict[str, Any] | None = None
+    result: AgentResult | None = None
+    provider_name = ""
 
-    settings = get_settings()
-    provider_name = "deterministic_evidence_v1"
-    response_data = None
-
-    if settings.ai_provider == "gemini" and settings.gemini_api_key:
+    if llm is not None:
         try:
-            gemini_provider = GeminiAiProvider(api_key=settings.gemini_api_key, model=settings.gemini_model)
-            response_data = gemini_provider.investigate(context)
-            provider_name = f"gemini_{settings.gemini_model}"
-        except Exception:
-            fallback = DeterministicEvidenceAiProvider()
-            response_data = fallback.investigate(context)
-            provider_name = "deterministic_evidence_v1 (gemini_fallback)"
-    else:
-        fallback = DeterministicEvidenceAiProvider()
-        response_data = fallback.investigate(context)
+            result = run_agent(db, org, goal=goal, system=INVESTIGATION_SYSTEM, tools=INVESTIGATION_TOOLS, planner=llm)
+            if result.final is not None:
+                response_data, _ = _ground(result.final, result.observations)
+                if not response_data["verifiedFacts"]:
+                    raise ValueError("agent answer had no grounded facts")
+                provider_name = llm.name
+            else:
+                raise ValueError(f"agent stopped without a usable answer ({result.stopped_reason})")
+        except Exception as e:  # network, quota, bad JSON, ungrounded answer → deterministic agent
+            logger.warning("LLM investigation agent failed: %s; falling back to rule planner", e)
+            response_data = None
+            failed_trace = (result.trace if result else []) + [{"type": "llm_failed", "error": str(e)[:300]}]
 
-    # Persist the investigation run
+    if response_data is None:
+        rp = _investigation_rule_planner(case.id)
+        result = AgentResult(final=None, trace=failed_trace if llm is not None else [])
+        inner = run_agent(db, org, goal=goal, system=INVESTIGATION_SYSTEM, tools=INVESTIGATION_TOOLS, planner=rp, max_steps=10)
+        result.trace += inner.trace
+        result.stopped_reason = inner.stopped_reason
+        response_data = inner.final or {}
+        provider_name = rp.name + (" (gemini_fallback)" if llm is not None else "")
+
+    # identifiers are always ours, never the model's
+    response_data["exceptionId"] = str(case.id)
+    response_data["jobId"] = str(job.id)
+    response_data["generatedAt"] = utcnow().isoformat()
+    response_data.setdefault("summary", "")
+    response_data.setdefault("confidence", 0.5)
+    tool_calls = [t for t in result.trace if t.get("type") == "tool_call"]
+    response_data["agent"] = {
+        "planner": provider_name,
+        "steps": max((t.get("step", 0) for t in result.trace), default=0),
+        "toolCalls": len(tool_calls),
+        "toolsUsed": sorted({t["tool"] for t in tool_calls if t.get("ok")}),
+        "stoppedReason": result.stopped_reason,
+        "readOnly": True,
+    }
+    response_data["agentTrace"] = result.trace
+
+    try:
+        confidence = float(response_data.get("confidence", 0.5))
+    except (TypeError, ValueError):
+        confidence = 0.5
+
     run = InvestigationRun(
         organisation_id=org,
         exception_id=case.id,
         job_id=job.id,
-        provider=provider_name,
-        response_json=response_data,
-        prompt_summary=f"Investigate exception {case.code} ({case.exception_type.value}) for job {job.code}",
-        confidence=response_data.get("confidence", 0.90),
+        provider=provider_name[:60],
+        response_json=json.loads(json.dumps(response_data, default=str)),
+        prompt_summary=goal,
+        confidence=max(0.0, min(confidence, 1.0)),
         created_by_id=user.id,
     )
     db.add(run)
 
-    # Update case status to investigating if currently open
     if case.status == ExceptionStatus.open:
         case.status = ExceptionStatus.investigating
 
@@ -580,9 +692,10 @@ def run_investigation(db: Session, user: User, exception_id: uuid.UUID) -> Inves
         "investigation.run_completed",
         "investigation_run",
         run.id,
-        {"exceptionCode": case.code, "jobCode": job.code, "provider": run.provider},
+        {"exceptionCode": case.code, "jobCode": job.code, "provider": run.provider, "toolCalls": len(tool_calls)},
     )
     return run
+
 
 
 def list_investigations(db: Session, org_id: uuid.UUID, exception_id: uuid.UUID | None = None, job_id: uuid.UUID | None = None) -> list[InvestigationRun]:

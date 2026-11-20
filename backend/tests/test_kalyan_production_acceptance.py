@@ -313,6 +313,6 @@ def test_kalyan_production_lifecycle_acceptance(client, admin):
     }).json()
     assert app["status"] == "approved"
 
-    # Verify Job Status transitioned to 'settled'
+    # Jeweller approval alone does not settle the job: the karigar must accept it (two-party approval)
     job_refreshed = client.get(f"/api/v1/jobs/{job['id']}", headers=h).json()
-    assert job_refreshed["status"] == "settled"
+    assert job_refreshed["status"] != "settled"
